@@ -233,7 +233,7 @@ def save_baseline(path: Path | str, tool: str, entries: Dict[str, int], note: st
         "note": note,
         "entries": dict(sorted(entries.items())),
     }
-    baseline_path.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    baseline_path.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
 
 
 def apply_baseline(findings: List[Finding], baseline: Dict[str, int]) -> List[Finding]:

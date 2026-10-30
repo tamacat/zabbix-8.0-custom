@@ -70,6 +70,8 @@ class VulnerabilityRegistry:
         self.path.write_text(
             yaml.safe_dump(data, sort_keys=True, allow_unicode=True),
             encoding="utf-8",
+            # Windowsでも改行はLFにする(CRLFで書くと、内容が同じでも台帳全体が差分になる)。
+            newline=chr(10),
         )
 
     # --- Vulnerability CRUD -------------------------------------------------
