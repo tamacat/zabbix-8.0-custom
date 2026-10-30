@@ -153,7 +153,8 @@ case "${SOURCE}" in
 	auto) fetch_cdn || { echo "-- no official tarball for ${NEW}; building it from the git tag"; fetch_git; } ;;
 esac
 
-top="$(tar -tzf "${TARBALL}" | head -n 1 | cut -d/ -f1)"
+# head で途中まで読むとtarがSIGPIPEで終わり、pipefailで止まるので、tarの終了コードは見ない。
+top="$({ tar -tzf "${TARBALL}" || true; } | head -n 1 | cut -d/ -f1)"
 [ "${top}" = "zabbix-${NEW}" ] || fail "unexpected top-level directory '${top}' in the tarball"
 
 # --- 2. 無改変のツリーだけのコミット -----------------------------------------------
