@@ -4,7 +4,7 @@
 # 静的な整合性(フォント名・Dockerfileのリンク・パッケージ)は常に検証する。実際にグリフが描画
 # されるかは、WEB_IMAGE にビルド済みwebイメージを渡したときだけ検証する(無ければskip)。
 #
-#   WEB_IMAGE=tamacat/zabbix-web-nginx-mysql:7.0-custom bats tests/scripts/web-font.bats
+#   WEB_IMAGE=tamacat/zabbix-web-nginx-mysql:8.0-custom bats tests/scripts/web-font.bats
 
 setup() {
 	REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd)"

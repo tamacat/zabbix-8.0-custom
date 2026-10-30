@@ -1,7 +1,7 @@
 [project]
 name = "zabbix7-release-tools"
 version = "0.1.0"
-description = "Zabbix 7.0 EOL-Free Custom Build のビルド/リリースツール層(VulnerabilityRegistry・ScanRunner・ImagePublisher)"
+description = "Zabbix 8.0 Custom Build のビルド/リリースツール層(VulnerabilityRegistry・ScanRunner・ImagePublisher)"
 requires-python = ">=3.9"
 dependencies = [
     "PyYAML>=6.0",

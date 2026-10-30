@@ -1,7 +1,7 @@
 # zabbix-agent2(エージェント、Go言語)— Alpine Linuxベースのカスタムイメージ [FR1.3][FR3.1]。
 #
 # 前提: docker/server/Dockerfile 冒頭のコメントと同じ — ${ZABBIX_SRC_DIR}(既定
-# sources/zabbix-8.0.0rc3)にZabbix 7.0ソース(src/go/ を含む)が配置されるまで
+# sources/zabbix-8.0.0rc3)にZabbix 8.0ソース(src/go/ を含む)が配置されるまで
 # `docker build` は実行できない。
 #
 # zabbix_agent2はスタンドアロンのGoモジュールではなく、C側の静的ライブラリ

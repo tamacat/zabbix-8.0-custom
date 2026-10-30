@@ -94,7 +94,7 @@ if ! command -v cppcheck >/dev/null 2>&1; then
 	fail "cppcheck が見つかりません。インストールしてから再実行してください。"
 fi
 if [ ! -d "${SOURCE_DIR}" ]; then
-	fail "ソースディレクトリ '${SOURCE_DIR}' が見つかりません。Zabbix 7.0ソースをまだ追加していない可能性があります。"
+	fail "ソースディレクトリ '${SOURCE_DIR}' が見つかりません。Zabbix 8.0ソースをまだ追加していない可能性があります。"
 fi
 
 # 解消済みbaselineの通知は、ツリー全体をスキャンしたときだけ意味がある(patchedでは一部しか見ない)。

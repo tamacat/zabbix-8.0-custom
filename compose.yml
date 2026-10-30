@@ -1,11 +1,11 @@
-# Zabbix 7.0 EOL-Free Custom Build — Compose definition [FR4.1][FR4.2].
+# Zabbix 8.0 Custom Build — Compose definition [FR4.1][FR4.2].
 #
 # server/web/agent2/proxy reach each other by container name on a bridge network (per the network
 # topology design). Production MySQL is not containerized — the operator's existing MySQL instance is
 # reached via DB_SERVER_HOST (this keeps environment-variable/volume compatibility with the official
 # images).
 #
-# Build context is this directory (zabbix-7.0-custom/) itself; Dockerfiles are docker/<component>/
+# Build context is this directory (zabbix-8.0-custom/) itself; Dockerfiles are docker/<component>/
 # Dockerfile (same build layout as scripts/build-images.sh — amd64 only, per BR5.2).
 #
 # Usage:
@@ -37,7 +37,7 @@ services:
       args:
         ZABBIX_SRC_DIR: ${ZABBIX_SRC_DIR:-sources/zabbix-8.0.0rc3}
         ALPINE_VERSION: ${ALPINE_VERSION:-3.24}
-    image: tamacat/zabbix-server-mysql:${ZABBIX_IMAGE_TAG:-7.0-custom}
+    image: tamacat/zabbix-server-mysql:${ZABBIX_IMAGE_TAG:-8.0-custom}
     container_name: zabbix-server
     # fping(ICMPチェック)は生ソケットが要る。DockerはNET_RAWを既定で許すがPodmanは許さないため、明示する。
     cap_add:
@@ -65,7 +65,7 @@ services:
       args:
         ZABBIX_SRC_DIR: ${ZABBIX_SRC_DIR:-sources/zabbix-8.0.0rc3}
         ALPINE_VERSION: ${ALPINE_VERSION:-3.24}
-    image: tamacat/zabbix-web-nginx-mysql:${ZABBIX_IMAGE_TAG:-7.0-custom}
+    image: tamacat/zabbix-web-nginx-mysql:${ZABBIX_IMAGE_TAG:-8.0-custom}
     container_name: zabbix-web
     networks:
       - zbxnet
@@ -93,7 +93,7 @@ services:
       args:
         ZABBIX_SRC_DIR: ${ZABBIX_SRC_DIR:-sources/zabbix-8.0.0rc3}
         ALPINE_VERSION: ${ALPINE_VERSION:-3.24}
-    image: tamacat/zabbix-agent2:${ZABBIX_IMAGE_TAG:-7.0-custom}
+    image: tamacat/zabbix-agent2:${ZABBIX_IMAGE_TAG:-8.0-custom}
     container_name: zabbix-agent2
     networks:
       - zbxnet
@@ -115,7 +115,7 @@ services:
       args:
         ZABBIX_SRC_DIR: ${ZABBIX_SRC_DIR:-sources/zabbix-8.0.0rc3}
         ALPINE_VERSION: ${ALPINE_VERSION:-3.24}
-    image: tamacat/zabbix-proxy-sqlite3:${ZABBIX_IMAGE_TAG:-7.0-custom}
+    image: tamacat/zabbix-proxy-sqlite3:${ZABBIX_IMAGE_TAG:-8.0-custom}
     container_name: zabbix-proxy
     # fping(ICMPチェック)は生ソケットが要る。DockerはNET_RAWを既定で許すがPodmanは許さないため、明示する。
     cap_add:
@@ -141,7 +141,7 @@ services:
   # it by default (matching the sibling zabbix-5.0-custom project's behavior). Unset COMPOSE_PROFILES
   # (or set it to something else) in .env to opt out and point DB_SERVER_HOST at a real MySQL instead.
   dev-mysql:
-    image: docker.io/library/mysql:8.0
+    image: docker.io/library/mysql:8.4
     container_name: zabbix-dev-mysql
     profiles: ["dev"]
     # Zabbix requires utf8mb4/utf8mb4_bin specifically (its frontend's own schema health-check refuses

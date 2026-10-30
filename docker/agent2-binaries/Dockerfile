@@ -8,7 +8,7 @@
 #             静的ライブラリとしてビルドする。
 #
 # 前提: docker/agent2/Dockerfile と同じ — ${ZABBIX_SRC_DIR}(既定 sources/zabbix-8.0.0rc3)に
-# Zabbix 7.0ソースが配置されていること。ビルドコンテキストはzabbix-7.0-custom/自身。
+# Zabbix 8.0ソースが配置されていること。ビルドコンテキストはzabbix-8.0-custom/自身。
 #
 # 成果物は `--target artifacts` で取り出す(scripts/build-agent2-binaries.sh が行う)。
 # アーカイブの名前は ASSET_PREFIX(release_tools.cli generate-release-tag --asset-prefix)で決まる。

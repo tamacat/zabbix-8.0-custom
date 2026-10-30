@@ -1,4 +1,4 @@
-"""Zabbix 7.0 is AGPL-3.0 (6.0 and earlier are GPL-2.0): the repository must say so wherever it states a license."""
+"""Zabbix 7.0 and later (this is 8.0) are AGPL-3.0 (6.0 and earlier are GPL-2.0): the repository must say so wherever it states a license."""
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

@@ -46,7 +46,7 @@ done
 echo "**** Pointing the built-in 'Zabbix server' host's agent interface at the zabbix-agent2 container..."
 mysql --user=root --password="${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" <<'SQL'
 UPDATE interface i JOIN hosts h ON h.hostid = i.hostid
-SET i.dns = 'zabbix-agent2'
+SET i.dns = 'zabbix-agent2', i.useip = 0
 WHERE h.host = 'Zabbix server' AND i.type = 1;
 SQL
 

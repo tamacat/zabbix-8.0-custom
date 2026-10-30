@@ -2,7 +2,7 @@ Zabbix agent 2 @ZABBIX_VERSION@ for Windows (64-bit) -- custom build @BUILD_DATE
 ==============================================================================
 
 A standalone zabbix_agent2.exe built from the Zabbix @ZABBIX_VERSION@ source by the
-tamacat/zabbix-7.0-custom project (https://github.com/tamacat/zabbix-7.0-custom).
+tamacat/zabbix-8.0-custom project (https://github.com/tamacat/zabbix-8.0-custom).
 Zabbix 7.0 no longer receives upstream updates; this build is re-built and re-scanned
 by that project. The same agent also ships as the tamacat/zabbix-agent2 container image.
 

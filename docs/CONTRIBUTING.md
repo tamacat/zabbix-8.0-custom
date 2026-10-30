@@ -94,9 +94,30 @@ impossible to pass, so SAST is gated on **new** findings only:
   a red build green: run `./scripts/scan-sast.sh --update-baseline`, read the
   `git diff data/sast-baseline/`, and commit only if every added entry is an
   upstream finding you accept. A patch of ours that introduces a finding must
-  be fixed, not baselined. When moving to a later 7.0.x point release, replace
-  the tree, update `data/upstream-import-ref` to the import commit, and
-  regenerate the baseline.
+  be fixed, not baselined. When moving to a newer upstream 8.0 version, run
+  `./scripts/import-upstream.sh <version>` (it replaces the tree in its own
+  commit and points `data/upstream-import-ref` at it), then regenerate the
+  baseline **from that unmodified import commit**, not from the patched tree,
+  so that none of our patches' findings can end up in it:
+
+  ```bash
+  ref=$(cat data/upstream-import-ref); dir=sources/zabbix-<version>
+  mkdir -p /tmp/base && git archive "$ref" "$dir" | tar -x -C /tmp/base
+  ./scripts/scan-sast.sh --update-baseline "/tmp/base/$dir"
+  ./scripts/scan-sast.sh          # our patched files against that baseline
+  ```
+
+  CI installs cppcheck from Ubuntu 24.04 (2.13); generate the baseline with
+  the same version, or the messages differ and the gate fails.
+
+## Version policy
+
+This repository follows the Zabbix **8.0** line only: its alpha/beta/rc
+pre-releases until 8.0.0, then the 8.0.x point releases
+(`release_tools/zabbix_version.py` refuses other lines, and
+`scripts/check-zabbix-version.sh` never proposes a pre-release once a release
+is in use). A move to another line (8.2, 9.0, ...) is a new sibling repository,
+as 6.0 → 7.0 → 8.0 were.
 
 The release gate requires zero known Critical/High/Medium vulnerabilities,
 except for items covered by an explicit, time-boxed waiver recorded in the

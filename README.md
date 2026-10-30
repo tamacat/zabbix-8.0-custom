@@ -1,21 +1,65 @@
-# Zabbix 7.0 Custom (EOL-Free, SAST/SCA-Clean)
+# Zabbix 8.0 Custom (SAST/SCA-Clean, upstream-tracking)
 
-Zabbix 7.0 is nearing its official support end-of-life, and its upstream
-container images have stopped receiving updates — known vulnerabilities are
-no longer being patched upstream. This project builds Zabbix 7.0 from source,
-applies the fixes needed to pass SAST/SCA scanning, and repackages it as a
-custom, continuously rebuildable set of container images —
-`zabbix-server`, `zabbix-web`, `zabbix-agent2`, and `zabbix-proxy` — staying
-config/behavior compatible with the official `zabbix/zabbix-*` images.
+The official `zabbix/zabbix-*` container images are updated slowly, so known
+vulnerabilities in their base images and bundled libraries can stay unpatched
+for a long time. This project builds Zabbix 8.0 from source, applies the fixes
+needed to pass SAST/SCA scanning, and repackages it as a custom, continuously
+rebuildable set of container images — `zabbix-server`, `zabbix-web`,
+`zabbix-agent2`, and `zabbix-proxy` — staying config/behavior compatible with
+the official `zabbix/zabbix-*` 8.0 images. It is the 8.0 sibling of
+`zabbix-7.0-custom` and `zabbix-6.0-custom` and works the same way.
+
 MySQL is the only supported backend for the main database; `zabbix-proxy` is
 the one exception, since its own local buffer database may use SQLite3, same
 as the official image of that name — it never touches the main MySQL
-database. Zabbix itself stays on the 7.0.x line; only the base images and
-this project's own build/scan/publish tooling are actively maintained.
+database. Zabbix itself stays on the 8.0 line.
 
-The Zabbix 7.0 source tree is vendored at `sources/zabbix-8.0.0rc3/` (see
-"Adding the Zabbix source" below for provenance and how to update it to a
-later 7.0.x point release).
+**8.0 is not released yet.** The vendored source is **8.0.0rc3**
+(`sources/zabbix-8.0.0rc3/`), a release candidate. The project follows the
+upstream pre-releases until 8.0.0 is out and then the 8.0.x point releases;
+see "Following upstream" below. Do not run a release candidate in production.
+
+## Following upstream (pre-releases, 8.0.0, 8.0.x)
+
+Upstream versions are taken from the Zabbix sources themselves, not from the
+official images, so a new upstream version can be built the day it is tagged.
+
+- **Check**: `./scripts/check-zabbix-version.sh` compares the imported version
+  (`ZABBIX_VERSION` in `.env.example`) with the upstream 8.0 git tags and fails
+  with the command to run when a newer one exists. The weekly CI run does this
+  (`zabbix-version` job). The rules (`release_tools/zabbix_version.py`):
+  a newer *release* always wins (on 8.0.0rc4 with 8.0.0 and 8.0.1rc1 out, the
+  next step is 8.0.0); while on a pre-release, the next pre-release is
+  followed; once on a release, pre-releases (8.0.2rc1) are not.
+- **Import**: `./scripts/import-upstream.sh <version>` (for example
+  `8.0.0rc4`, `8.0.0`, `8.0.1`):
+  1. fetches the official tarball from `cdn.zabbix.com` (`stable/8.0/` for
+     releases, `development/8.0/` for pre-releases) and checks it against the
+     `.sha256` published next to it — a mismatch stops the import;
+  2. when no tarball is published (8.0.0rc3 is only a git tag), builds the same
+     tarball from the tag with `make dist` in a container
+     (`docker/upstream-dist/`), after checking that `git.zabbix.com` and the
+     GitHub mirror (`github.com/zabbix/zabbix`) name the same commit. This was
+     checked against 8.0.0beta2, which exists both ways: the trees match
+     except for autotools-generated files and the version stamp;
+  3. commits the **unmodified** tree on its own (with the executable bits from
+     the tarball) and removes the previous one — this is the commit
+     `data/upstream-import-ref` points at, and the SAST gate's reference;
+  4. re-applies this project's patches (everything that changed under
+     `sources/` since the previous import) with a 3-way merge, and replaces the
+     old version string in `.env.example`, the Dockerfiles, scripts, CI and
+     tests (files containing `import-upstream: keep-versions` are left alone).
+  Steps 4's changes are left uncommitted: review them, resolve any conflicts,
+  then run the tests, regenerate the SAST baseline, build and scan (the script
+  prints the commands), and commit.
+- **Image tags** carry the exact upstream version, pre-release included:
+  `tamacat/zabbix-server-mysql:8.0.0rc3-alpine-b20261031`. There are still no
+  floating tags.
+- **Read the release notes** of each new version: new configuration parameters
+  need a line in `docker/*/entrypoint.sh` (the tests check that every
+  parameter written is one the new `zabbix_server`/`zabbix_proxy` accepts),
+  and new build requirements (packages, PHP or Go versions) go into the
+  Dockerfiles.
 
 ## The build/release tooling layer
 
@@ -52,35 +96,22 @@ scanned, published image. It implements six components:
   digest (CI-only; skipped with a warning outside a GitHub Actions OIDC
   context).
 
-## Adding the Zabbix source
+## The Zabbix source
 
 The Dockerfiles and scripts reference `${ZABBIX_SRC_DIR}` (build arg / env
 var, default `sources/zabbix-8.0.0rc3`) as the location of the buildable
-Zabbix 7.0 source tree, relative to this directory. It is vendored directly
-(committed, not a nested git submodule), matching the layout already used by
-the sibling `zabbix-5.0-custom` project.
+Zabbix 8.0 source tree, relative to this directory. It is vendored directly
+(committed, not a nested git submodule), the same layout as the 5.0/6.0/7.0
+projects, and is put there by `scripts/import-upstream.sh` (see "Following
+upstream"). Never place or replace it by hand: the import commit must hold the
+unmodified tree only.
 
-The vendored tree was obtained from Zabbix's official source distribution
-and its integrity verified against the official SHA-256 checksum before
-extracting:
-
-```bash
-curl -sSL -o zabbix-8.0.0rc3.tar.gz \
-  https://cdn.zabbix.com/zabbix/sources/stable/7.0/zabbix-8.0.0rc3.tar.gz
-curl -sSL -o zabbix-8.0.0rc3.tar.gz.sha256 \
-  https://cdn.zabbix.com/zabbix/sources/stable/7.0/zabbix-8.0.0rc3.tar.gz.sha256
-sha256sum -c zabbix-8.0.0rc3.tar.gz.sha256   # must print "OK" before extracting
-tar -xzf zabbix-8.0.0rc3.tar.gz -C sources/
-```
-
-To move to a later 7.0.x point release, repeat the same download-and-verify
-steps for the new version, replace `sources/zabbix-8.0.0rc3/` with the new
-tree, commit that unmodified tree on its own, point `data/upstream-import-ref`
-at that commit (the SAST gate diffs against it), regenerate the SAST baseline
-(`./scripts/scan-sast.sh --update-baseline`), and update
-`ZABBIX_VERSION`/`ZABBIX_SRC_DIR` in `.env` and `.env.example` accordingly
-(never upgrade past the 7.0.x line — see `docs/CONTRIBUTING.md`). Override
-`ZABBIX_SRC_DIR` if you place the source somewhere else.
+8.0.0rc3 has no official tarball (`cdn.zabbix.com` stops at 8.0.0beta2 for
+8.0), so it was built from the git tag `8.0.0rc3` (commit
+`090f06dc325f1629c5cdc2bb3354a184e15e55d4` on both `git.zabbix.com` and the
+GitHub mirror); the import commit's message records the source and the
+SHA-256 of the generated tarball. Override `ZABBIX_SRC_DIR` if you place the
+source somewhere else.
 
 ## Running the tools
 
@@ -123,8 +154,8 @@ upstream Zabbix source vs. this project's own build/CI layer).
 ## Docker Hub
 
 Pre-built images are published to the same Docker Hub repositories that
-`zabbix-5.0-custom` uses, named after the official `zabbix/*` images, so a 7.0
-tag sits next to the 5.0 ones in each repository:
+`zabbix-5.0-custom` uses, named after the official `zabbix/*` images, so an 8.0
+tag sits next to the 5.0/6.0/7.0 ones in each repository:
 
 | Component | Docker Hub |
 |---|---|
@@ -165,7 +196,7 @@ layout follows the official packages (`sbin/` or `bin/`, `conf/`).
 # Verify, then unpack (Linux)
 sha256sum -c SHA256SUMS --ignore-missing
 cosign verify-blob --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity-regexp '^https://github.com/tamacat/zabbix-7.0-custom/.github/workflows/agent2-binaries.yml@' \
+  --certificate-identity-regexp '^https://github.com/tamacat/zabbix-8.0-custom/.github/workflows/agent2-binaries.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
 tar -xzf zabbix_agent2-8.0.0rc3-b20261017-linux-amd64.tar.gz
 ```
@@ -220,7 +251,7 @@ leaves the parameter at Zabbix's default.
 | `ZBX_HOSTNAME` | `Hostname`, **must match the proxy name registered on the server**; default `zabbix-proxy-sqlite3`. It also names the SQLite buffer, `db_data/<name>.sqlite` |
 | `ZBX_PROXYMODE` | `0` active (default), `1` passive |
 | `ZBX_TLSCONNECT`, `ZBX_TLSACCEPT`, `ZBX_TLSPSKIDENTITY`, `ZBX_TLS*FILE`, `ZBX_TLSPSK`, `ZBX_TLSCERT`, ... | TLS to the server. Give files by path (relative paths are looked up in the `enc` volume) or give the content itself |
-| `ZBX_PROXYCONFIGFREQUENCY`, `ZBX_HEARTBEATFREQUENCY`, `ZBX_DATASENDERFREQUENCY`, `ZBX_START*`, `ZBX_*CACHESIZE`, `ZBX_TIMEOUT`, `ZBX_DEBUGLEVEL`, ... | the matching `zabbix_proxy.conf` parameters, including the 7.0 additions (`ZBX_STARTAGENTPOLLERS`, `ZBX_STARTHTTPAGENTPOLLERS`, `ZBX_STARTSNMPPOLLERS`, `ZBX_STARTBROWSERPOLLERS`, `ZBX_WEBDRIVERURL`, `ZBX_MAXCONCURRENTCHECKSPERPOLLER`, `ZBX_PROXYBUFFERMODE`, `ZBX_PROXYMEMORYBUFFERSIZE`, `ZBX_PROXYMEMORYBUFFERAGE`) |
+| `ZBX_PROXYCONFIGFREQUENCY`, `ZBX_HEARTBEATFREQUENCY`, `ZBX_DATASENDERFREQUENCY`, `ZBX_START*`, `ZBX_*CACHESIZE`, `ZBX_TIMEOUT`, `ZBX_DEBUGLEVEL`, ... | the matching `zabbix_proxy.conf` parameters, including the 7.0 and 8.0 additions (`ZBX_STARTAPMCOLLECTOR`, `ZBX_APMLISTENIP/PORT`, `ZBX_APMTLS*`, `ZBX_TLSLISTEN`, `ZBX_STARTTELEMETRYQUERYPOLLERS`, `ZBX_TELEMETRYPROVIDER_<N>`, `ZBX_STARTAGENTPOLLERS`, `ZBX_STARTHTTPAGENTPOLLERS`, `ZBX_STARTSNMPPOLLERS`, `ZBX_STARTBROWSERPOLLERS`, `ZBX_WEBDRIVERURL`, `ZBX_MAXCONCURRENTCHECKSPERPOLLER`, `ZBX_PROXYBUFFERMODE`, `ZBX_PROXYMEMORYBUFFERSIZE`, `ZBX_PROXYMEMORYBUFFERAGE`) |
 | `ZBX_CONFIGFREQUENCY` (the 6.0 name) | read as `ZBX_PROXYCONFIGFREQUENCY`, because 7.0 deprecates `ConfigFrequency`. `ZBX_STARTHISTORYPOLLERS` is gone in 7.0 and is reported and ignored |
 | `ZBX_LOADMODULE` | comma-separated modules from the `modules` directory |
 
@@ -235,7 +266,7 @@ For ICMP checks the container needs `NET_RAW` (`compose.yml` adds it).
 ## Official environment variables (server, agent2, web)
 
 Like the proxy, the other images take the variables of the official
-`zabbix/zabbix-*` 7.0 images; an unsupported `ZBX_*` variable is warned about
+`zabbix/zabbix-*` 8.0 images; an unsupported `ZBX_*` variable is warned about
 at start instead of being ignored silently.
 
 - **zabbix-server**: `DB_SERVER_HOST/PORT`, `MYSQL_USER/PASSWORD/DATABASE` (and `*_FILE`
@@ -402,7 +433,7 @@ Consequences to know about:
 
 ## License
 
-AGPL-3.0, matching upstream Zabbix 7.0's own license (Zabbix changed from GPL-2.0 to
+AGPL-3.0, matching upstream Zabbix 8.0's own license (Zabbix changed from GPL-2.0 to
 AGPL-3.0 with 7.0) — see [LICENSE](LICENSE). The tooling in this repository is under the same license.
 
 The AGPL applies to users who reach a modified program over a network (section 13):
@@ -411,12 +442,38 @@ the corresponding source is this repository (the Zabbix source under `sources/` 
 the patches applied, plus the build files). Keep it publicly available alongside
 the published images.
 
-## 7.0 build notes (verified against 8.0.0rc3)
+## 8.0 build notes (8.0.0rc3)
 
-- Builder stages need `linux-headers` (`linux/version.h`, used by `proc.c`); added to server/proxy/agent2.
-- agent2: 7.0 writes the binary to `src/go/bin/zabbix_agent2` (6.0: `src/go/bin` was the file itself).
+What changed from the 7.0 build, and why:
+
+- **PCRE2**: 8.0 requires PCRE2 (`--with-libpcre2`); the old PCRE is gone from server/proxy/agent2.
+- **c-ares** (`--with-ares`) for asynchronous DNS in server and proxy, as in the official 8.0 images.
+- **Proxy APM collector** (`--with-apm`, OTLP/gRPC, new in 8.0) is built in, as in the official
+  `zabbix-proxy-sqlite3` 8.0 image. It does not run unless `ZBX_STARTAPMCOLLECTOR=1`. It adds the Alpine
+  `grpc-cpp`/`libprotobuf` libraries to the proxy image (scanned by Trivy).
+- **PHP curl**: the 8.0 frontend checks for the curl extension and uses it for the ClickHouse history
+  storage, so the source-built PHP now includes curl (7.0 left it out).
+- **MySQL 8.4**: 8.0 supports MySQL 8.4 to 9.7 (8.0.42+ only with `ZBX_ALLOWUNSUPPORTEDDBVERSIONS=1`).
+  `dev-mysql` and the CI service use `mysql:8.4`.
+- **Go**: agent2 is built with Go 1.27.3; `golang.org/x/net` v0.62.0 and `x/text` v0.43.0 replace the
+  versions 8.0.0rc3 vendors (Trivy findings, same fix as 7.0).
+- **symfony/yaml** 5.4.54 with Zabbix's own patch re-applied (same as 6.0/7.0; 8.0.0rc3 still vendors 5.1.3).
+- **Windows agent2**: 8.0's `build/mingw/Makefile` links the C objects through `libagent.a` and no longer
+  builds five `sysinfo` common objects; `docker/agent2-binaries/build-windows.sh` follows it.
+- **New environment variables** (official 8.0 names): server `ZBX_HISTORYPROVIDER_<N>` /
+  `ZBX_TELEMETRYPROVIDER_<N>` (Zabbix's native `provider;options` form — the JSON form of the official
+  images is refused with a message, since the image has no JSON parser), `ZBX_ENABLEMOBILEDEVICES`,
+  `ZBX_BRIDGEADAPTERURL`, `ZBX_FRONTENDALLOWEDIP`, `ZBX_TLS_FRONTENDACCEPT`, `ZBX_TLSFRONTENDCERT*`,
+  `ZBX_TLSLISTEN`, `ZBX_STARTTELEMETRYQUERYPOLLERS`, Vault AppRole (`ZBX_VAULTAPPROLEID/SECRETID`); proxy
+  `ZBX_STARTAPMCOLLECTOR`, `ZBX_APMLISTENIP/PORT`, `ZBX_APMTLS*`, `ZBX_TELEMETRYPROVIDER_<N>`, Vault; agent2
+  `ZBX_ENABLEPROFILER`, `ZBX_PROFILER*`, `ZBX_USERPARAMETERDIR`, `ZBX_STATUSPORT`, `ZBX_PERSISTENTBUFFERFILE`;
+  web `ZBX_HISTORYPROVIDERS` / `ZBX_TELEMETRYPROVIDERS` (JSON), `ZBX_BANNERS_ENABLED`,
+  `ZBX_HTTP_AUTH_ENABLED`, `ZBX_MODULES_CONFIG_ENABLED`, `ZBX_MEDIA_TYPE_DENYLIST`, `ZBX_CERT_STORAGE`,
+  `ZBX_SERVER_TLS_*`, `ZBX_APM_CA_LOCATION/CAFILE`. The 7.0 names keep working
+  (`ZBX_HISTORYSTORAGEURL` is deprecated by Zabbix in favour of the providers).
+- Carried over from 7.0: `linux-headers` in the builder stages; agent2's binary is `src/go/bin/zabbix_agent2`.
 - Database TLS: the Alpine mariadb-connector-c (3.4) requires a verified TLS connection when no SSL option is set,
-  which breaks plain or self-signed-cert MySQL. `src/libs/zbxdb/db.c` carries a patch (same as 6.0) that, when
-  `DBTLSConnect` is unset, sets `MYSQL_OPT_SSL_ENFORCE=0` and `MYSQL_OPT_SSL_VERIFY_SERVER_CERT=0`. Verified against
-  MySQL 8.0 with and without TLS. For real TLS set `ZBX_DBTLSCONNECT=verify_full` + `ZBX_DBTLSCAFILE`
+  which breaks plain or self-signed-cert MySQL. `src/libs/zbxdb/dbconn.c` (8.0 moved the code out of `db.c`)
+  carries the same patch as 6.0/7.0: when `DBTLSConnect` is unset, it sets `MYSQL_OPT_SSL_ENFORCE=0` and
+  `MYSQL_OPT_SSL_VERIFY_SERVER_CERT=0`. For real TLS set `ZBX_DBTLSCONNECT=verify_full` + `ZBX_DBTLSCAFILE`
   (MariaDB's connector supports only `required` / `verify_full`).

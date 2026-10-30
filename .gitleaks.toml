@@ -9,7 +9,7 @@
 #
 # Do not add paths to get a red build green. Add one only after reading the flagged
 # content and confirming it is not a credential, and say why here.
-title = "zabbix-7.0-custom"
+title = "zabbix-8.0-custom"
 
 [extend]
 useDefault = true

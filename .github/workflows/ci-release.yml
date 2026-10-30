@@ -91,7 +91,7 @@ jobs:
       # CI専用の使い捨てインスタンス — 環境変数の配線・起動可否のみを検証する
       # (本プロジェクトは本番MySQLをコンテナ化しない設計のため、これは代替物)。
       mysql:
-        image: mysql:8.0
+        image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: ci-root-password
           MYSQL_DATABASE: zabbix

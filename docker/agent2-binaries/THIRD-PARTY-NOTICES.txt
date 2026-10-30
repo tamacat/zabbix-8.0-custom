@@ -5,7 +5,7 @@ The Zabbix agent 2 source code is distributed under the GNU Affero General Publi
 License, version 3 (see COPYING). The binaries in this archive are statically linked with the libraries
 below. The full text of each license that applies to a library listed here is in the
 licenses/ directory where noted; the corresponding source for the agent and for this
-build is the tamacat/zabbix-7.0-custom repository at the revision named in README.txt.
+build is the tamacat/zabbix-8.0-custom repository at the revision named in README.txt.
 
 OpenSSL                 Apache License 2.0     licenses/openssl/LICENSE.txt
                         https://www.openssl.org/

@@ -58,7 +58,7 @@ if [ -z "${ZABBIX_VERSION:-}" ]; then
 fi
 
 if [ ! -d "${ZABBIX_SRC_DIR}" ]; then
-	fail "ZABBIX_SRC_DIR='${ZABBIX_SRC_DIR}' が見つかりません。Zabbix 7.0ソースをまだ追加していない可能性があります(README.md参照)。"
+	fail "ZABBIX_SRC_DIR='${ZABBIX_SRC_DIR}' が見つかりません。Zabbix 8.0ソースをまだ追加していない可能性があります(README.md参照)。"
 fi
 
 RELEASE_TAG="$("${PY}" -m release_tools.cli generate-release-tag \

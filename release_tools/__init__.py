@@ -1,4 +1,4 @@
-"""release_tools — Zabbix 7.0 EOL-Free Custom Build のビルド/リリースツール層。
+"""release_tools — Zabbix 8.0 Custom Build のビルド/リリースツール層。
 
 このパッケージは Zabbix 本体のソースコードを一切含まない。含むのは、
 脆弱性棚卸し(VulnerabilityRegistry)・スキャンゲート判定(ScanRunner)・
