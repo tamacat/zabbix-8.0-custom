@@ -1,0 +1,529 @@
+<?php declare(strict_types = 0);
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+?>
+
+
+window.service_edit_popup = new class {
+
+	init({rules, clone_rules, serviceid, tabs_id, children, children_problem_tags_html, problem_tags, status_rules,
+			search_limit}) {
+		this.serviceid = serviceid;
+		this.search_limit = search_limit;
+		this.overlay = overlays_stack.getById('service.edit');
+		this.dialogue = this.overlay.$dialogue[0];
+		this.form_element = this.overlay.$dialogue.$body[0].querySelector('form');
+		this.form = new CForm(this.form_element, rules);
+		this.footer = this.overlay.$dialogue.$footer[0];
+		this.clone_rules = clone_rules;
+		this.status_rules = status_rules;
+
+		const return_url = new URL('zabbix.php', location.href);
+
+		return_url.searchParams.set('action', 'service.list');
+		ZABBIX.PopupManager.setReturnUrl(return_url.href);
+
+		this.status_rule_template = new Template(this.form_element.querySelector('#status-rule-tmpl').innerHTML);
+		this.child_template = new Template(this.form_element.querySelector('#child-service-tmpl').innerHTML);
+
+		for (const status_rule of status_rules) {
+			this.#addStatusRule(status_rule);
+		}
+
+		this.children = new Map();
+
+		for (const service of children) {
+			this.children.set(service.serviceid, {
+				serviceid: service.serviceid,
+				name: service.name,
+				problem_tags_html: children_problem_tags_html[service.serviceid]
+			});
+		}
+
+		this.#filterChildren();
+
+		// Setup parent services.
+		jQuery('#parent_serviceids_')
+			.multiSelect('getSelectButton')
+			.addEventListener('click', () => {
+				this.#selectParents();
+			});
+
+		// Setup problem tags.
+		const $problem_tags = jQuery(document.getElementById('problem_tags'));
+
+		$problem_tags.dynamicRows({
+			template: '#problem-tag-row-tmpl',
+			allow_empty: true,
+			rows: problem_tags
+		});
+
+		const table = document.getElementById('problem_tags');
+
+		table.addEventListener('click', e => {
+			if (['element-table-add', 'element-table-remove'].some(cls => e.target.classList.contains(cls))) {
+				this.form.validateSubmit(this.form.getAllValues());
+				this.#update();
+			}
+		});
+
+		table.addEventListener('change', () => this.#update());
+
+		// Setup service rules.
+		document
+			.getElementById('status_rules')
+			.addEventListener('click', (e) => {
+				if (e.target.classList.contains('js-add')) {
+					this.#editStatusRule();
+				}
+				else if (e.target.classList.contains('js-edit')) {
+					this.#editStatusRule(e.target.closest('tr'));
+				}
+				else if (e.target.classList.contains('js-remove')) {
+					e.target.closest('tr').nextSibling.remove();
+					e.target.closest('tr').remove();
+				}
+			});
+
+		// Setup tags tab.
+		const tabs = jQuery('#' + tabs_id);
+
+		const initialize_tags = (event, ui) => {
+			const $panel = event.type === 'tabscreate' ? ui.panel : ui.newPanel;
+
+			if ($panel.attr('id') === 'tags-tab') {
+				const $tags = $panel.find('.tags-table');
+
+				$tags
+					.dynamicRows({template: '#tag-row-tmpl', allow_empty: true, remove_next_sibling: true});
+
+					tabs.off('tabscreate tabsactivate', initialize_tags);
+			}
+		};
+
+		tabs.on('tabscreate tabsactivate', initialize_tags);
+
+		// Setup child services.
+		document
+			.getElementById('children-filter')
+			.addEventListener('click', (e) => {
+				if (e.target.classList.contains('js-filter')) {
+					this.#filterChildren();
+				}
+				else if (e.target.classList.contains('js-reset')) {
+					document.getElementById('children-filter-name').value = '';
+					this.#filterChildren();
+				}
+			});
+
+		document
+			.getElementById('children-filter-name')
+			.addEventListener('keypress', (e) => {
+				if (e.key === 'Enter') {
+					this.#filterChildren();
+					e.preventDefault();
+				}
+			}, {passive: false});
+
+		document
+			.getElementById('children')
+			.addEventListener('click', (e) => {
+				if (e.target.classList.contains('js-add')) {
+					this.#selectChildren();
+				}
+				else if (e.target.classList.contains('js-remove')) {
+					this.#removeChild(e.target.closest('tr').dataset.serviceid);
+				}
+			});
+
+		// Update form field state according to the form data.
+		for (const id of ['propagation_rule', 'algorithm']) {
+			document.getElementById(id).addEventListener('change', () => this.#update());
+		}
+
+		this.#update();
+
+		new CFormFieldsetCollapsible(document.getElementById('advanced-configuration'));
+
+		this.footer.querySelector('.js-submit').addEventListener('click', () => this.#submit());
+		this.footer.querySelector('.js-clone')?.addEventListener('click', () => this.#clone());
+		this.footer.querySelector('.js-delete')?.addEventListener('click', () => this.#delete());
+	}
+
+	#update() {
+		const propagation_rule = document.getElementById('propagation_rule').value;
+
+		let has_problem_tags = false;
+
+		for (const problem_tag of document.querySelectorAll('#problem_tags .js-problem-tag-tag')) {
+			if (problem_tag.value !== '') {
+				has_problem_tags = true;
+
+				break;
+			}
+		}
+
+		document
+			.getElementById('problem_tags')
+			.querySelectorAll('.js-problem-tag-input, .element-table-remove, .element-table-add')
+			.forEach(element => element.disabled = this.children.size > 0);
+
+		document.getElementById('algorithm-not-applicable-warning').style.display = this.children.size > 0
+			? 'none'
+			: '';
+
+		switch (propagation_rule) {
+			case '<?= ZBX_SERVICE_STATUS_PROPAGATION_INCREASE ?>':
+			case '<?= ZBX_SERVICE_STATUS_PROPAGATION_DECREASE ?>':
+				document.getElementById('status_propagation_value_field').style.display = '';
+				document.getElementById('propagation_value_number').style.display = '';
+				document.getElementById('propagation_value_status').style.display = 'none';
+				break;
+
+			case '<?= ZBX_SERVICE_STATUS_PROPAGATION_FIXED ?>':
+				document.getElementById('status_propagation_value_field').style.display = '';
+				document.getElementById('propagation_value_number').style.display = 'none';
+				document.getElementById('propagation_value_status').style.display = '';
+				break;
+
+			default:
+				document.getElementById('status_propagation_value_field').style.display = 'none';
+				document.getElementById('propagation_value_number').style.display = 'none';
+				document.getElementById('propagation_value_status').style.display = 'none';
+		}
+
+		document.querySelector('#children .js-add').disabled = has_problem_tags;
+		this.form.validateChanges(['problem_tags']);
+	}
+
+	#editStatusRule(row = null) {
+		let parameters;
+
+		if (row !== null) {
+			const row_index = row.dataset.row_index;
+
+			parameters = {
+				edit: '1',
+				row_index,
+				new_status: row.querySelector(`[name="status_rules[${row_index}][new_status]"`).value,
+				type: row.querySelector(`[name="status_rules[${row_index}][type]"`).value,
+				limit_value: row.querySelector(`[name="status_rules[${row_index}][limit_value]"`).value,
+				limit_status: row.querySelector(`[name="status_rules[${row_index}][limit_status]"`).value
+			};
+		}
+		else {
+			let row_index = 0;
+
+			while (document.querySelector(`#status_rules [data-row_index="${row_index}"]`) !== null) {
+				row_index++;
+			}
+
+			parameters = {row_index};
+		}
+
+		const overlay = PopUp('popup.service.statusrule.edit', parameters, {
+			dialogueid: 'service_status_rule_edit',
+			dialogue_class: 'modal-popup-medium'
+		});
+
+		overlay.$dialogue[0].addEventListener('dialogue.submit', (e) => {
+			if (row !== null) {
+				this.#updateStatusRule(row, e.detail)
+			}
+			else {
+				this.#addStatusRule(e.detail);
+			}
+		});
+	}
+
+	#addStatusRule(status_rule) {
+		document
+			.querySelector('#status_rules tbody')
+			.insertAdjacentHTML('beforeend', this.status_rule_template.evaluate(status_rule));
+	}
+
+	#updateStatusRule(row, status_rule) {
+		this.#removeErrorContainer(row);
+		row.insertAdjacentHTML('afterend', this.status_rule_template.evaluate(status_rule));
+		row.remove();
+	}
+
+	#removeErrorContainer(row) {
+		const error_row = row.parentElement
+			.querySelector(`#additional_rules_error_container_${row.getAttribute('data-row_index')}`);
+
+		error_row.parentElement.remove();
+	}
+
+	#renderChild(service) {
+		document
+			.querySelector('#children tbody')
+			.insertAdjacentHTML('beforeend', this.child_template.evaluate({
+				serviceid: service.serviceid,
+				name: service.name,
+				problem_tags_html: service.problem_tags_html
+			}));
+	}
+
+	#removeChild(serviceid) {
+		const child = this.form_element.querySelector(`#children tbody tr[data-serviceid="${serviceid}"]`);
+
+		if (child !== null) {
+			child.remove();
+		}
+
+		this.children.delete(serviceid);
+		this.#updateChildrenFilterStats();
+		this.#updateTabIndicator();
+		this.#update();
+	}
+
+	#removeAllChildren() {
+		document.querySelector('#children tbody').innerHTML = '';
+
+		this.children.clear();
+		this.#updateChildrenFilterStats();
+		this.#updateTabIndicator();
+		this.#update();
+	}
+
+	#filterChildren() {
+		const container = document.querySelector('#children tbody');
+		const filter_name = document.getElementById('children-filter-name').value.toLowerCase();
+
+		let count = 0;
+
+		container.innerHTML = '';
+
+		for (const service of this.children.values()) {
+			if (!service.name.toLowerCase().includes(filter_name)) {
+				continue;
+			}
+
+			this.#renderChild(service);
+
+			if (++count == this.search_limit) {
+				break;
+			}
+		}
+
+		this.#updateChildrenFilterStats();
+		this.#updateTabIndicator();
+	}
+
+	#updateChildrenFilterStats() {
+		const container = document.querySelector('#children tbody');
+		const stats_template = <?= json_encode(_('Displaying %1$s of %2$s found')) ?>;
+
+		document.querySelector('#children tfoot .inline-filter-stats').textContent = this.children.size > 0
+			? sprintf(stats_template, container.childElementCount, this.children.size)
+			: '';
+	}
+
+	#updateTabIndicator() {
+		document
+			.querySelector('#children')
+			.setAttribute('data-tab-indicator', this.children.size);
+	}
+
+	#selectChildren() {
+		const exclude_serviceids = [];
+
+		if (this.serviceid !== null) {
+			exclude_serviceids.push(this.serviceid);
+		}
+
+		for (const input of this.form_element.querySelectorAll('#children tbody input')) {
+			exclude_serviceids.push(input.value);
+		}
+
+		const overlay = PopUp('popup.services', {
+			title: <?= json_encode(_('Add child services')) ?>,
+			exclude_serviceids
+		}, {dialogueid: 'services'});
+
+		overlay.$dialogue[0].addEventListener('dialogue.submit', (e) => {
+			for (const service of e.detail) {
+				if (!this.children.has(service.serviceid)) {
+					this.children.set(service.serviceid, service);
+					this.#renderChild(service);
+				}
+			}
+
+			this.#updateChildrenFilterStats();
+			this.#updateTabIndicator();
+			this.#update();
+		});
+	}
+
+	#selectParents() {
+		const exclude_serviceids = [];
+
+		if (this.serviceid !== null) {
+			exclude_serviceids.push(this.serviceid);
+		}
+
+		for (const service of jQuery('#parent_serviceids_').multiSelect('getData')) {
+			exclude_serviceids.push(service.id);
+		}
+
+		const overlay = PopUp('popup.services', {
+			title: <?= json_encode(_('Add parent services')) ?>,
+			exclude_serviceids
+		}, {dialogueid: 'services'});
+
+		overlay.$dialogue[0].addEventListener('dialogue.submit', (e) => {
+			const data = [];
+
+			for (const service of e.detail) {
+				data.push({id: service.serviceid, name: service.name});
+			}
+
+			jQuery('#parent_serviceids_').multiSelect('addData', data);
+		});
+	}
+
+	#clone() {
+		this.serviceid = null;
+		this.form_element.querySelector('[name=serviceid]').remove();
+		this.#removeAllChildren();
+
+		const title = <?= json_encode(_('New service')) ?>;
+		const buttons = [
+			{
+				title: <?= json_encode(_('Add')) ?>,
+				class: 'js-submit',
+				keepOpen: true,
+				isSubmit: true
+			},
+			{
+				title: <?= json_encode(_('Cancel')) ?>,
+				class: ZBX_STYLE_BTN_ALT,
+				cancel: true,
+				action: ''
+			}
+		];
+
+		this.overlay.unsetLoading();
+		this.overlay.setProperties({title, buttons});
+
+		this.footer.querySelector('.js-submit').addEventListener('click', () => this.#submit());
+
+		this.overlay.recoverFocus();
+		this.overlay.containFocus();
+		this.form.reload(this.clone_rules);
+	}
+
+	#delete() {
+		if (window.confirm(<?= json_encode(_('Delete selected service?')) ?>)) {
+			this.#removePopupMessages();
+
+			const post_data = {
+				serviceids: [this.form.findFieldByName('serviceid').getValue()],
+				[CSRF_TOKEN_NAME]: <?= json_encode(CCsrfTokenHelper::get('service')) ?>
+			};
+
+			const curl = new Curl('zabbix.php');
+
+			curl.setArgument('action', 'service.delete');
+			curl.setArgument(CSRF_TOKEN_NAME, <?= json_encode(CCsrfTokenHelper::get('service')) ?>);
+
+			this.#post(curl.getUrl(), post_data, (response) => {
+				overlayDialogueDestroy(this.overlay.dialogueid);
+
+				this.dialogue.dispatchEvent(new CustomEvent('dialogue.submit', {detail: response}));
+			});
+		}
+		else {
+			this.overlay.unsetLoading();
+		}
+	}
+
+	#submit() {
+		this.#removePopupMessages();
+		const fields = this.form.getAllValues();
+
+		fields.child_serviceids = [...this.children.keys()];
+		if (fields.child_serviceids.length) {
+			delete fields.problem_tags;
+		}
+
+		this.form.validateSubmit(fields)
+			.then(result => {
+				if (!result) {
+					this.overlay.unsetLoading();
+
+					return;
+				}
+
+				const curl = new Curl('zabbix.php');
+
+				curl.setArgument('action', this.serviceid !== null ? 'service.update' : 'service.create');
+
+				this.#post(curl.getUrl(), fields, response => {
+					overlayDialogueDestroy(this.overlay.dialogueid);
+					this.dialogue.dispatchEvent(new CustomEvent('dialogue.submit', {detail: response}));
+				});
+			});
+	}
+
+	#post(url, data, success_callback) {
+		fetch(url, {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(data)
+		})
+			.then((response) => response.json())
+			.then((response) => {
+				if ('error' in response) {
+					throw {error: response.error};
+				}
+
+				if ('form_errors' in response) {
+					this.form.setErrors(response.form_errors, true, true);
+					this.form.renderErrors();
+
+					return;
+				}
+
+				success_callback(response);
+			})
+			.catch((exception) => this.#ajaxExceptionHandler(exception))
+			.finally(() => this.overlay.unsetLoading());
+	}
+
+	#removePopupMessages() {
+		for (const el of this.form_element.parentNode.children) {
+			if (el.matches('.msg-good, .msg-bad, .msg-warning')) {
+				el.parentNode.removeChild(el);
+			}
+		}
+	}
+
+	#ajaxExceptionHandler(exception) {
+		let title, messages;
+
+		if (typeof exception === 'object' && 'error' in exception) {
+			title = exception.error.title;
+			messages = exception.error.messages;
+		}
+		else {
+			messages = [<?= json_encode(_('Unexpected server error.')) ?>];
+		}
+
+		const message_box = makeMessageBox('bad', messages, title)[0];
+
+		this.form_element.parentNode.insertBefore(message_box, this.form_element);
+	}
+}

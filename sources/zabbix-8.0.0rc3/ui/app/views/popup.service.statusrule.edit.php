@@ -1,0 +1,111 @@
+<?php declare(strict_types = 0);
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+
+/**
+ * @var CView $this
+ * @var array $data
+ */
+
+$form = (new CForm())
+	->setId('service-status-rule-form')
+	->setName('service_status_rule_form')
+	->addVar('edit', $data['is_edit'] ? '1' : null)
+	->addVar('row_index', $data['row_index'])
+	->addItem(getMessages());
+
+// Enable form submitting on Enter.
+$form->addItem((new CSubmitButton())->addClass(ZBX_STYLE_FORM_SUBMIT_HIDDEN));
+
+$form_grid = (new CFormGrid())
+	->addItem([
+		new CLabel(_('Set status to'), 'service-status-rule-new-status-focusable'),
+		new CFormField(
+			(new CSelect('new_status'))
+				->setId('service-status-rule-new-status')
+				->setFocusableElementId('service-status-rule-new-status-focusable')
+				->setValue($data['form']['new_status'])
+				->addOptions(CSelect::createOptionsFromArray(CServiceHelper::getProblemStatusNames()))
+		)
+	])
+	->addItem([
+		new CLabel(_('Condition'), 'service-status-rule-type-focusable'),
+		new CFormField(
+			(new CSelect('type'))
+				->setId('service-status-rule-type')
+				->setFocusableElementId('service-status-rule-type-focusable')
+				->setValue($data['form']['type'])
+				->addOptions(CSelect::createOptionsFromArray(CServiceHelper::getStatusRuleTypeOptions()))
+				->setOptionTemplate('#{*label}')
+				->setSelectedOptionTemplate('#{*label}')
+		)
+	])
+	->addItem([
+		(new CLabel('N', 'service-status-rule-limit-value'))->setId('service-status-rule-limit-value-label'),
+		new CFormField([
+			new CHorList([
+				(new CNumericBox('limit_value', $data['form']['limit_value'], 7, allow_negative: false))
+					->setDefaultValue(1)
+					->setId('service-status-rule-limit-value')
+					->setWidth(ZBX_TEXTAREA_TINY_WIDTH)
+					->setAriaRequired()
+					->setErrorContainer('limit_value_error_container'),
+				(new CSpan('%'))
+					->setId('service-status-rule-limit-value-unit')
+					->addStyle('display: none;')
+			]),
+			(new CDiv())
+				->addClass(ZBX_STYLE_ERROR_CONTAINER)
+				->setId('limit_value_error_container')
+		])
+	])
+	->addItem([
+		new CLabel(_('Status'), 'service-status-rule-limit-status-focusable'),
+		new CFormField(
+			(new CSelect('limit_status'))
+				->setId('service-status-rule-limit-status')
+				->setFocusableElementId('service-status-rule-limit-status-focusable')
+				->setValue($data['form']['limit_status'])
+				->addOptions(CSelect::createOptionsFromArray(CServiceHelper::getStatusNames()))
+		)
+	]);
+
+$form
+	->addItem($form_grid);
+
+$output = [
+	'header' => $data['is_edit'] ? _('Additional rule') : _('New additional rule'),
+	'body' => $form->toString(),
+	'buttons' => [
+		[
+			'title' => $data['is_edit'] ? _('Update') : _('Add'),
+			'class' => 'js-submit',
+			'keepOpen' => true,
+			'isSubmit' => true
+		]
+	],
+	'script_inline' => getPagePostJs().
+		$this->readJsFile('popup.service.statusrule.edit.js.php').
+		'service_status_rule_edit_popup.init('.json_encode([
+			'rules' => $data['js_validation_rules']
+		]).');'
+];
+
+if ($data['user']['debug_mode'] == GROUP_DEBUG_MODE_ENABLED) {
+	CProfiler::getInstance()->stop();
+	$output['debug'] = CProfiler::getInstance()->make()->toString();
+}
+
+echo json_encode($output);

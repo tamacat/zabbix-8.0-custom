@@ -1,0 +1,25 @@
+.columns-wrapper {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: start;
+
+	&.columns-2 > {
+		div,
+		li {
+			display: block;
+			flex: 0 0 50%;
+			max-width: 50%;
+		}
+	}
+
+	& > {
+		div,
+		ul {
+			&:not(:last-child) {
+				section {
+					margin-right: 10px;
+				}
+			}
+		}
+	}
+}

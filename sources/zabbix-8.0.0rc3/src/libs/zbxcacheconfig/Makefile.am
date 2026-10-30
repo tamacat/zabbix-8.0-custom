@@ -1,0 +1,36 @@
+## Process this file with automake to produce Makefile.in
+
+noinst_LIBRARIES = libzbxcacheconfig.a
+
+libzbxcacheconfig_a_SOURCES = \
+	dbsettings.c \
+	dbhistoryconfig.c \
+	dbconfig.c \
+	dbconfig.h \
+	dbconfig_dump.c \
+	dbconfig_maintenance.c \
+	dbsync.c \
+	dbsync.h \
+	inventory.c \
+	item.c \
+	macro_ctx.c \
+	trigger.c \
+	user_macro.c \
+	user_macro.h \
+	vps_monitor.c \
+	vps_monitor.h \
+	proxy_group.c \
+	proxy_group.h \
+	dbconfig_atomic.c \
+	dbconfig_local.c \
+	dbconfig_local.h \
+	dbconfig_correlation.c \
+	dbconfig_correlation.h \
+	dbconfig_cep.c \
+	dbconfig_cep.h \
+	macrotags.c
+
+libzbxcacheconfig_a_CFLAGS = \
+	-I$(top_srcdir)/src/zabbix_server/ \
+	$(TLS_CFLAGS) \
+	$(TEST_FLAGS)

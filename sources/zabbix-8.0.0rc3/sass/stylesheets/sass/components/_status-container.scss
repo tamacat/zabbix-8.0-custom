@@ -1,0 +1,132 @@
+%status {
+	box-sizing: border-box;
+	display: inline-block;
+	min-width: 16px;
+	height: 16px;
+	padding-right: 3px;
+	padding-left: 3px;
+	font-size: $font-h3-size;
+	line-height: 15px;
+	text-align: center;
+	vertical-align: top;
+	border-width: 1px;
+	border-style: solid;
+	border-radius: var(--badge-border-radius);
+}
+
+.status-container {
+	display: inline-block;
+	height: 16px;
+	white-space: nowrap;
+
+	&:not(:first-of-type) {
+		margin-left: 3px;
+	}
+
+	[class^="status-"] {
+		&:not(:last-of-type) {
+			padding-right: 4px;
+			border-right-style: none;
+		}
+
+		&:not(:first-of-type) {
+			border-top-left-radius: 0;
+			border-bottom-left-radius: 0;
+		}
+
+		&:not(:last-of-type) {
+			border-top-right-radius: 0;
+			border-bottom-right-radius: 0;
+		}
+
+		&[data-hintbox='1'] {
+			cursor: pointer;
+		}
+	}
+}
+
+.status-list-wrapper {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px 3px;
+
+	.status-green, .status-grey {
+		margin-top: 1px;
+		margin-bottom: 1px;
+	}
+}
+
+.status-na-bg,
+.status-info-bg,
+.status-warning-bg,
+.status-average-bg,
+.status-high-bg,
+.status-disaster-bg {
+	@extend %status;
+
+	border-color: $status-border-color;
+}
+
+.status-green {
+	@extend %status;
+
+	color: $status-color;
+	background-color: $status-green-bg-color;
+	border-color: $status-green-border-color;
+}
+
+.status-disabled {
+	@extend %status;
+
+	color: $form-disabled-font-color;
+	background-color: $status-grey-bg-color;
+	border-color: $status-disabled-border-color;
+}
+
+.status-grey {
+	@extend %status;
+
+	color: $form-disabled-font-color;
+	background-color: $status-grey-bg-color;
+	border-color: $status-grey-border-color;
+}
+
+.status-yellow {
+	@extend %status;
+
+	color: $status-color;
+	background-color: $status-yellow-bg-color;
+	border-color: $status-yellow-border-color;
+}
+
+.status-red {
+	@extend %status;
+
+	color: $status-color;
+	background-color: $status-red-bg-color;
+	border-color: $status-red-border-color;
+}
+
+@each $status-amp-severity, $bg-color, $border-color in (
+	(status-amp-severity-trace, $alt-blue-grey, $status-apm-severity-trace-border-color),
+	(status-amp-severity-debug, $alt-dark-blue, $status-apm-severity-debug-border-color),
+	(status-amp-severity-info, $alt-yellow, $status-apm-severity-info-border-color),
+	(status-amp-severity-warn, $alt-orange, $status-apm-severity-warn-border-color),
+	(status-amp-severity-error, $alt-dark-orange, $status-apm-severity-error-border-color),
+	(status-amp-severity-fatal, $alt-red, $status-apm-severity-fatal-border-color)
+) {
+	.#{$status-amp-severity} {
+		@extend %status;
+
+		color: darken($bg-color, 45%);
+		background-color: $bg-color;
+		border-color: $border-color;
+	}
+}
+
+.status-amp-severity-unspecified {
+	@extend %status;
+
+	background-color: transparent;
+	border-color: transparent;
+}

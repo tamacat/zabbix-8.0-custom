@@ -1,0 +1,345 @@
+<?php
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+
+/**
+ * This class should be used to call API services locally using the CApiService classes.
+ */
+class CLocalApiClient extends CApiClient {
+
+	/**
+	 * Factory for creating API services.
+	 *
+	 * @var CRegistryFactory
+	 */
+	protected $serviceFactory;
+
+	/**
+	 * Whether debug mode is enabled.
+	 *
+	 * @var bool
+	 */
+	public $debug = false;
+
+	public function getUserData(): ?array {
+		return CApiService::$userData;
+	}
+
+	/**
+	 * Set service factory.
+	 *
+	 * @param CRegistryFactory $factory
+	 */
+	public function setServiceFactory(CRegistryFactory $factory) {
+		$this->serviceFactory = $factory;
+	}
+
+	/**
+	 * Call the given API service method and return the response.
+	 *
+	 * @param string   $requestApi     API name.
+	 * @param string   $requestMethod  API method.
+	 * @param array    $params         API parameters.
+	 * @param int|null $auth_type      CJsonRpc::AUTH_TYPE_BEARER, CJsonRpc::AUTH_TYPE_COOKIE, CJsonRpc::AUTH_TYPE_DPOP
+	 *
+	 * @return CApiClientResponse
+	 */
+	public function callMethod(string $requestApi, string $requestMethod, array $params, ?int $auth_type) {
+		global $DB;
+
+		$api = strtolower($requestApi);
+		$method = strtolower($requestMethod);
+
+		$response = new CApiClientResponse();
+
+		// check the mobile device feature flag
+		if ($api === 'device' && !CSettingsHelper::isMobileDevicesEnabled()) {
+			$response->errorCode = ZBX_API_ERROR_PERMISSIONS;
+			$response->errorMessage = _s('No permissions to call "%1$s.%2$s".', $requestApi, $requestMethod);
+
+			return $response;
+		}
+
+		if ($this->requiresAuthentication($api, $method) && CApiService::$userData === null) {
+			$response->errorCode = ZBX_API_ERROR_PARAMETERS;
+			$response->errorMessage = _('Session terminated, re-login, please.');
+
+			return $response;
+		}
+
+		$newTransaction = false;
+		try {
+			// check permissions
+			if (APP::getMode() === APP::EXEC_MODE_API && $this->requiresAuthentication($api, $method)
+					&& !$this->isAllowedMethod($api, $method, $auth_type)) {
+				$response->errorCode = ZBX_API_ERROR_PERMISSIONS;
+				$response->errorMessage = _s('No permissions to call "%1$s.%2$s".', $requestApi, $requestMethod);
+
+				return $response;
+			}
+
+			// the nopermission parameter must not be available for external API calls.
+			unset($params['nopermissions']);
+
+			// if no transaction has been started yet - start one
+			if ($DB['TRANSACTIONS'] == 0) {
+				DBstart();
+				$newTransaction = true;
+			}
+
+			// call API method
+			$result = call_user_func_array([$this->serviceFactory->getObject($api), $method], [$params]);
+
+			// if the method was called successfully - commit the transaction
+			if ($newTransaction) {
+				$committed = DBend(true);
+
+				if (!$committed && APP::getMode() === APP::EXEC_MODE_API) {
+					throw new DBException(_('Database error occurred.'), DB::DBEXECUTE_ERROR);
+				}
+			}
+
+			$response->data = $result;
+		}
+		catch (Exception $e) {
+			if ($newTransaction) {
+				// if we're calling user.login and authentication failed - commit the transaction to save the
+				// failed attempt data
+				if ($api === 'user' && $method === 'login') {
+					$committed = DBend(true);
+
+					if (!$committed) {
+						$e = new DBException(_('Database error occurred.'), DB::DBEXECUTE_ERROR);
+					}
+				}
+				// otherwise - revert the transaction
+				else {
+					DBend(false);
+				}
+			}
+
+			$response->setErrorByException($e, $this->debug);
+		}
+
+		return $response;
+	}
+
+	/**
+	 * Returns true if the given API is valid.
+	 *
+	 * @param string $api
+	 *
+	 * @return bool
+	 */
+	public function isValidApi(string $api): bool {
+		return $this->serviceFactory->hasObject($api);
+	}
+
+	/**
+	 * Returns true if the given method is valid.
+	 *
+	 * @param string $api
+	 * @param string $method
+	 *
+	 * @return bool
+	 */
+	public function isValidMethod(string $api, string $method): bool {
+		$api_service = $this->serviceFactory->getObject($api);
+
+		return array_key_exists($method, $api_service::ACCESS_RULES);
+	}
+
+	/**
+	 * Returns true if calling the given method requires a valid authentication token.
+	 *
+	 * @param string $api
+	 * @param string $method
+	 *
+	 * @return bool
+	 */
+	public function requiresAuthentication(string $api, string $method): bool {
+		return !(($api === 'user' && $method === 'login')
+			|| ($api === 'user' && $method === 'checkauthentication')
+			|| ($api === 'apiinfo' && $method === 'version')
+			|| ($api === 'device' && $method === 'onboard')
+			|| ($api === 'serverinfo' && $method === 'get')
+		);
+	}
+
+	/**
+	 * Returns true if a valid authentication token is not required to call the specified method.
+	 * If such a token is present in the request, authentication will occur.
+	 *
+	 * @param string $api
+	 * @param string $method
+	 *
+	 * @return bool
+	 */
+	public function supportsAuthentication(string $api, string $method): bool {
+		return ($api === 'apiinfo' && $method === 'version') || ($api === 'serverinfo' && $method === 'get');
+	}
+
+	/**
+	 * Returns true if the current user is permitted to call the given API method, and false otherwise.
+	 *
+	 * @param string $api
+	 * @param string $method
+	 * @param int    $auth_type
+	 *
+	 * @return bool
+	 */
+	protected function isAllowedMethod(string $api, string $method, int $auth_type): bool {
+		global $ZBX_FEATURE_FLAGS;
+
+		$api_service = $this->serviceFactory->getObject($api);
+		$user_data = $api_service::$userData;
+		$method_rules = $api_service::ACCESS_RULES[$method];
+
+		if (!array_key_exists('min_user_type', $method_rules)
+				|| !in_array($user_data['type'], [USER_TYPE_ZABBIX_USER, USER_TYPE_ZABBIX_ADMIN, USER_TYPE_SUPER_ADMIN])
+				|| $user_data['type'] < $method_rules['min_user_type']) {
+			return false;
+		}
+
+		if (array_key_exists('feature_flag', $method_rules) && !$ZBX_FEATURE_FLAGS[$method_rules['feature_flag']]) {
+			return false;
+		}
+
+		$name_condition_parts = ['name LIKE '.zbx_dbstr('api%')];
+
+		if ($auth_type == CJsonRpc::AUTH_TYPE_DPOP) {
+			$name_condition_parts[] = 'OR name='.zbx_dbstr('devices.access');
+		}
+
+		$exists_action_rule = array_key_exists('action', $method_rules);
+
+		if ($exists_action_rule) {
+			$name_condition_parts[] = 'OR name='.zbx_dbstr($method_rules['action']);
+			$name_condition_parts[] = 'OR name='.zbx_dbstr('actions.default_access');
+		}
+
+		$name_conditions = count($name_condition_parts) > 1
+			? '('.implode(' ', $name_condition_parts).')'
+			: $name_condition_parts[0];
+
+		$db_rules = DBselect(
+			'SELECT type,name,value_str,value_int'.
+			' FROM role_rule'.
+			' WHERE roleid='.zbx_dbstr($user_data['roleid']).
+				' AND '.$name_conditions.
+			' ORDER by name'
+		);
+
+		$is_api_allow_list = false;
+		$api_methods = [];
+		$actions_default_access = true;
+		$is_action_allowed = null;
+
+		while ($db_rule = DBfetch($db_rules)) {
+			$rule_value = $db_rule[CRole::RULE_TYPE_FIELDS[$db_rule['type']]];
+
+			switch ($db_rule['name']) {
+				case 'devices.access':
+					if ($rule_value == ZBX_ROLE_RULE_DISABLED) {
+						return false;
+					}
+					break;
+
+				case 'api.access':
+					if ($rule_value == ZBX_ROLE_RULE_DISABLED && $auth_type != CJsonRpc::AUTH_TYPE_DPOP) {
+						return false;
+					}
+					break;
+
+				case 'api.mode':
+					$is_api_allow_list = $rule_value == ZBX_ROLE_RULE_API_MODE_ALLOW;
+					break;
+
+				case 'actions.default_access':
+					$actions_default_access = $rule_value == ZBX_ROLE_RULE_ENABLED;
+					break;
+
+				default:
+					if (str_starts_with($db_rule['name'], 'api.method.')) {
+						$api_methods[] = $rule_value;
+					}
+					elseif ($exists_action_rule && $db_rule['name'] === $method_rules['action']) {
+						$is_action_allowed = $rule_value == ZBX_ROLE_RULE_ENABLED;
+					}
+			}
+		}
+
+		if ($exists_action_rule) {
+			$is_action_allowed = $is_action_allowed !== null ? $is_action_allowed : $actions_default_access;
+
+			if (!$is_action_allowed) {
+				return false;
+			}
+		}
+
+		if ($auth_type == CJsonRpc::AUTH_TYPE_DPOP) {
+			return true;
+		}
+
+		$api_method_masks = [
+			ZBX_ROLE_RULE_API_WILDCARD, ZBX_ROLE_RULE_API_WILDCARD_ALIAS, CRoleHelper::API_ANY_SERVICE.$method,
+			$api.CRoleHelper::API_ANY_METHOD
+		];
+
+		foreach ($api_methods as $api_method) {
+			if ($api_method === $api.'.'.$method || in_array($api_method, $api_method_masks)) {
+				return $is_api_allow_list;
+			}
+		}
+
+		return $is_api_allow_list ? false : true;
+	}
+
+	public function authenticate(array $auth, string $requested_api_method): CApiClientResponse {
+		$response = new CApiClientResponse();
+
+		try {
+			if ($auth['auth'] === null
+					|| ($auth['type'] == CJsonRpc::AUTH_TYPE_DPOP && !CSettingsHelper::isMobileDevicesEnabled())) {
+				throw new APIException(ZBX_API_ERROR_NO_AUTH, _('Not authorized.'));
+			}
+
+			$user = match ($auth['type']) {
+				CJsonRpc::AUTH_TYPE_BEARER => $this->serviceFactory->getObject('user')->checkAuthentication(
+					strlen($auth['auth']) == 64
+						? ['token' => $auth['auth']]
+						: ['sessionid' => $auth['auth']]
+				),
+				CJsonRpc::AUTH_TYPE_COOKIE => $this->serviceFactory->getObject('user')->checkAuthentication([
+					'sessionid' => $auth['auth']
+				]),
+				CJsonRpc::AUTH_TYPE_DPOP => $this->serviceFactory->getObject('user')->checkAuthenticationDpop([
+					'token' => $auth['auth'],
+					'signature' => $auth['sign'],
+					'requested_api_method' => $requested_api_method
+				])
+			};
+
+			if (array_key_exists('debug_mode', $user)) {
+				$this->debug = (bool) $user['debug_mode'];
+			}
+		}
+		catch (Exception $e) {
+			$response->setErrorByException($e, $this->debug);
+		}
+
+		return $response;
+	}
+}

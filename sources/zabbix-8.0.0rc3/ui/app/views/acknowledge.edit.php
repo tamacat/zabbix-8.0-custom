@@ -1,0 +1,216 @@
+<?php
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+
+/**
+ * @var CView $this
+ * @var array $data
+ */
+
+$form = (new CForm())
+	->addItem((new CVar(CSRF_TOKEN_NAME, CCsrfTokenHelper::get('acknowledge')))->removeId())
+	->setId('acknowledge_form')
+	->addVar('eventids', $data['eventids']);
+
+$form->addItem(
+	(new CVar('operation_count', 0))
+		->setAttribute('data-error-container', 'operations-count-error-container')
+);
+
+$form_list = (new CFormList())
+	->addRow(new CLabel(_('Problem')), (new CDiv($data['problem_name']))->addClass(ZBX_STYLE_WORDBREAK))
+	->addRow(
+		new CLabel(_('Message'), 'message'),
+		(new CTextArea('message', $data['message']))
+			->setWidth(ZBX_TEXTAREA_BIG_WIDTH)
+			->setAttribute('maxlength', DB::getFieldLength('acknowledges', 'message'))
+			->setEnabled($data['allowed_add_comments'])
+	);
+
+if (array_key_exists('history', $data)) {
+	$form_list->addRow(_('History'),
+		(new CDiv(makeEventHistoryTable($data['history'], $data['users'], $data['maintenances'], $data['ceprules'])))
+			->addClass(ZBX_STYLE_TABLE_FORMS_SEPARATOR)
+			->setAttribute('style', 'min-width: '.ZBX_TEXTAREA_BIG_WIDTH.'px;')
+	);
+}
+
+$selected_events = count($data['eventids']);
+
+$form_list
+	->addRow(_x('Scope', 'selected problems'),
+		(new CDiv(
+			(new CRadioButtonList('scope', $data['scope']))
+				->makeVertical()
+				->addValue([
+					_n('Only selected problem', 'Only selected problems', $selected_events),
+					($selected_events > 1) ? (new CDiv())->addClass(ZBX_STYLE_FORM_INPUT_MARGIN) : null,
+					($selected_events > 1) ? new CSup(_n('%1$s event', '%1$s events', $selected_events)) : null
+				], ZBX_ACKNOWLEDGE_SELECTED)
+				->addValue([
+					_('Selected and all other problems of related triggers'),
+					(new CDiv())->addClass(ZBX_STYLE_FORM_INPUT_MARGIN),
+					new CSup(_n('%1$s event', '%1$s events', $data['related_problems_count']))
+				], ZBX_ACKNOWLEDGE_PROBLEM)
+		))
+			->setAttribute('style', 'min-width: '.ZBX_TEXTAREA_BIG_WIDTH.'px;')
+			->addClass(ZBX_STYLE_TABLE_FORMS_SEPARATOR)
+	)
+	->addRow(
+		new CLabel(_('Change severity'), 'change_severity'),
+		(new CList([
+			(new CCheckBox('change_severity', ZBX_PROBLEM_UPDATE_SEVERITY))
+				->addClass('js-operation-checkbox')
+				->setChecked($data['change_severity'])
+				->setEnabled($data['allowed_change_severity'] && $data['editable_triggers_count'] > 0),
+			(new CSeverity('severity', (int) $data['severity'], $data['change_severity']))
+		]))
+			->addClass(ZBX_STYLE_INLINE_LIST)
+	)
+	->addRow(
+		new CLabel([_('Suppress'),
+			makeHelpIcon(_('Manual problem suppression. Date-time input accepts relative and absolute time format.'))
+		], 'suppress_problem'),
+		(new CList([
+			(new CCheckBox('suppress_problem', ZBX_PROBLEM_UPDATE_SUPPRESS))
+				->addClass('js-operation-checkbox')
+				->setChecked($data['suppress_problem'])
+				->setEnabled($data['allowed_suppress'] && $data['problem_can_be_suppressed']),
+			(new CListItem(
+				(new CRadioButtonList('suppress_time_option', ZBX_PROBLEM_SUPPRESS_TIME_DEFINITE))
+					->addValue(_('Indefinitely'), ZBX_PROBLEM_SUPPRESS_TIME_INDEFINITE)
+					->addValue(_('Until'), ZBX_PROBLEM_SUPPRESS_TIME_DEFINITE)
+					->setEnabled(false)
+					->setModern(true)
+			))->addClass(ZBX_STYLE_ALIGN_TOP),
+			(new CDateSelector('suppress_until_problem', $data['suppress_until_problem']))
+				->setDateFormat(ZBX_FULL_DATE_TIME)
+				->setPlaceholder(_($data['suppress_until_problem']))
+				->setAriaRequired()
+				->setEnabled(false)
+		]))->addClass(ZBX_STYLE_INLINE_LIST)
+	)
+	->addRow(
+		new CLabel([_('Unsuppress'), makeHelpIcon(_('Deactivates manual suppression.'))], 'unsuppress_problem'),
+		(new CList([
+			(new CCheckBox('unsuppress_problem', ZBX_PROBLEM_UPDATE_UNSUPPRESS))
+				->addClass('js-operation-checkbox')
+				->setChecked($data['unsuppress_problem'])
+				->setEnabled($data['allowed_suppress'] && $data['problem_can_be_unsuppressed'])
+		]))->addClass(ZBX_STYLE_HOR_LIST)
+	);
+
+if ($data['has_unack_events']) {
+	$form_list->addRow(
+		new CLabel([_('Acknowledge'),
+			makeHelpIcon(
+				_('Confirms the problem is noticed (acknowledging user will be recorded). Status change triggers action update operation.')
+			)
+		], 'acknowledge_problem'),
+		(new CCheckBox('acknowledge_problem', ZBX_PROBLEM_UPDATE_ACKNOWLEDGE))
+			->addClass('js-operation-checkbox')
+			->setEnabled($data['allowed_acknowledge'])
+	);
+}
+else {
+	$form->addItem((new CInput('hidden', 'acknowledge_problem', null))
+		->setAttribute('data-field-type', 'hidden')
+		->setEnabled(false)
+	);
+}
+
+if ($data['has_ack_events']) {
+	$form_list->addRow(
+		new CLabel([_('Unacknowledge'), makeHelpIcon(_('Undo problem acknowledgement.'))], 'unacknowledge_problem'),
+		(new CCheckBox('unacknowledge_problem', ZBX_PROBLEM_UPDATE_UNACKNOWLEDGE))
+			->addClass('js-operation-checkbox')
+			->setEnabled($data['allowed_acknowledge'])
+	);
+}
+else {
+	$form->addItem((new CInput('hidden', 'unacknowledge_problem', null))
+		->setAttribute('data-field-type', 'hidden')
+		->setEnabled(false)
+	);
+}
+
+$form_list
+	->addRow(
+		new CLabel([_('Convert to cause'),
+			makeHelpIcon(_('Converts a symptom event back to cause event'))
+		], 'change_rank'),
+		(new CCheckBox('change_rank', ZBX_PROBLEM_UPDATE_RANK_TO_CAUSE))
+			->addClass('js-operation-checkbox')
+			->setEnabled($data['allowed_change_problem_ranking'] && $data['problem_can_change_rank'])
+	)
+	->addRow(_('Close problem'),
+		(new CCheckBox('close_problem', ZBX_PROBLEM_UPDATE_CLOSE))
+			->addClass('js-operation-checkbox')
+			->setChecked($data['close_problem'])
+			->setEnabled($data['allowed_close'] && $data['problem_can_be_closed'])
+	);
+
+if ($data['allowed_ui_conf_maintenance'] && $data['allowed_edit_maintenance']) {
+	if ($data['editable_triggers_count'] > 0) {
+		$maintenance_url = (new CUrl('zabbix.php'))
+			->setArgument('action', 'popup')
+			->setArgument('popup', 'maintenance.edit')
+			->setArgument('context', 'trigger');
+
+		foreach ($data['eventids'] as $key => $eventid) {
+			$maintenance_url->setArgument("eventids[{$key}]", $eventid);
+		}
+
+		$form_list->addRow('',
+			(new CLink(_n('Suppress trigger', 'Suppress triggers', $data['editable_triggers_count']), $maintenance_url))
+		);
+	}
+	else {
+		$form_list->addRow('',
+			(new CSpan(_n('Suppress trigger', 'Suppress triggers', $selected_events)))->addClass(ZBX_STYLE_DISABLED)
+		);
+	}
+}
+
+$form_list
+	->addRow('',
+		(new CDiv(''))->setId('operations-count-error-container')
+	);
+
+$form->addItem($form_list);
+
+$output = [
+	'header' => $data['title'],
+	'doc_url' => CDocHelper::getUrl(CDocHelper::POPUP_ACKNOWLEDGMENT_EDIT),
+	'body' => (new CDiv([$data['errors'], $form]))->toString(),
+	'buttons' => [
+		[
+			'title' => _('Update'),
+			'class' => 'js-submit',
+			'keepOpen' => true,
+			'isSubmit' => true
+		]
+	],
+	'script_inline' => $this->readJsFile('acknowledge.edit.js.php').
+		'update_problem_popup.init('.json_encode(['rules' => $data['js_validation_rules']]).');',
+	'dialogue_class' => 'modal-popup-generic'
+];
+
+if ($data['user']['debug_mode'] == GROUP_DEBUG_MODE_ENABLED) {
+	CProfiler::getInstance()->stop();
+	$output['debug'] = CProfiler::getInstance()->make()->toString();
+}
+
+echo json_encode($output);

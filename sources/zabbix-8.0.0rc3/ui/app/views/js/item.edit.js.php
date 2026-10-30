@@ -1,0 +1,1386 @@
+<?php
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+
+/**
+ * @var CView $this
+ */
+
+?>
+(() => {
+const INTERFACE_TYPE_OPT = <?= INTERFACE_TYPE_OPT ?>;
+const ITEM_DELAY_FLEXIBLE = <?= ITEM_DELAY_FLEXIBLE ?>;
+const ITEM_STORAGE_OFF = <?= ITEM_STORAGE_OFF ?>;
+const ITEM_TYPE_CALCULATED = <?= ITEM_TYPE_CALCULATED ?>;
+const ITEM_TYPE_DEPENDENT = <?= ITEM_TYPE_DEPENDENT ?>;
+const ITEM_TYPE_IPMI = <?= ITEM_TYPE_IPMI ?>;
+const ITEM_TYPE_SIMPLE = <?= ITEM_TYPE_SIMPLE ?>;
+const ITEM_TYPE_SSH = <?= ITEM_TYPE_SSH ?>;
+const ITEM_TYPE_SNMP = <?= ITEM_TYPE_SNMP ?>;
+const ITEM_TYPE_TELNET = <?= ITEM_TYPE_TELNET ?>;
+const ITEM_TYPE_ZABBIX_ACTIVE = <?= ITEM_TYPE_ZABBIX_ACTIVE ?>;
+const ITEM_TYPE_TELEMETRY_QUERY = <?= ITEM_TYPE_TELEMETRY_QUERY ?>;
+const CONDITION_EVAL_TYPE_EXPRESSION = <?= CONDITION_EVAL_TYPE_EXPRESSION ?>;
+const HTTPCHECK_REQUEST_HEAD = <?= HTTPCHECK_REQUEST_HEAD ?>;
+const ZBX_PROPERTY_OWN = <?= ZBX_PROPERTY_OWN ?>;
+const ZBX_ITEM_CUSTOM_TIMEOUT_ENABLED = <?= ZBX_ITEM_CUSTOM_TIMEOUT_ENABLED ?>;
+const ZBX_STYLE_BTN_GREY = <?= json_encode(ZBX_STYLE_BTN_GREY) ?>;
+const ZBX_STYLE_DISPLAY_NONE = <?= json_encode(ZBX_STYLE_DISPLAY_NONE) ?>;
+const ZBX_STYLE_FORM_INPUT_MARGIN = <?= json_encode(ZBX_STYLE_FORM_INPUT_MARGIN) ?>;
+const ZBX_STYLE_TEXTAREA_FLEXIBLE = <?= json_encode(ZBX_STYLE_TEXTAREA_FLEXIBLE) ?>;
+
+window.item_edit_form = new class {
+
+	#host_interface_selector;
+	#tabs;
+
+	init({
+		rules, actions, field_switches, form_data, host, interface_types, inherited_timeouts, readonly,
+		testable_item_types, type_with_key_select, value_type_keys, source, return_url, test_rules, history_override,
+		history_override_hint_html, storage_value_types, telemetry_columns_config, telemetry_function_labels,
+		telemetry_operator_labels, telemetry_signal_type_metrics
+	}) {
+		this.actions = actions;
+		this.telemetry_columns_config = telemetry_columns_config;
+		this.telemetry_function_labels = telemetry_function_labels;
+		this.telemetry_operator_labels = telemetry_operator_labels;
+		this.telemetry_signal_type_metrics = telemetry_signal_type_metrics;
+		this.form_data = form_data;
+		this.form_readonly = readonly;
+		this.host = host;
+		this.inherited_timeouts = inherited_timeouts;
+		this.source = source;
+		this.testable_item_types = testable_item_types;
+		this.type_with_key_select = type_with_key_select;
+		this.value_type_keys = value_type_keys;
+		this.last_inferred_type = null;
+		this.history_override = source === 'item' ? history_override : [];
+		this.history_override_hint_html = history_override_hint_html;
+		this.storage_value_types = source === 'item' ? storage_value_types : [];
+
+		this.overlay = overlays_stack.end();
+		this.dialogue = this.overlay.$dialogue[0];
+		this.form_element = this.overlay.$dialogue.$body[0].querySelector('form');
+		this.form = new CForm(this.form_element, rules);
+
+		this.#host_interface_selector = new HostInterfaceSelector({
+			container: document.getElementById('items-tab'),
+			interface_types,
+			host_interfaces: host.interfaces,
+			type: this.form_data.type
+		});
+
+		this.footer = this.overlay.$dialogue.$footer[0];
+		this.tags_table = this.form_element.querySelector('.tags-table');
+		this.tags_abort_controller = null;
+
+		ZABBIX.PopupManager.setReturnUrl(return_url);
+
+		this.#tabs = {
+			preprocessing: new ItemEditPreprocessingTab({
+				container: document.getElementById('processing-tab'),
+				preprocessing: this.form_data.preprocessing,
+				readonly: this.form_readonly,
+				form: this.form,
+				test_rules: test_rules
+			})
+		}
+
+		this.#tabs.preprocessing.getContainer().addEventListener('test.validated', () => {
+			this.overlay.unsetLoading();
+			this.#updateActionButtons();
+		});
+
+		this.initForm(field_switches);
+		this.initFormCustomIntervals();
+		this.initEvents();
+		this.#initPopupListeners();
+
+		if (this.source === 'itemprototype') {
+			this.initItemPrototypeForm();
+			this.initItemPrototypeEvents();
+		}
+
+		this.#initTelemetryRows();
+
+		this.updateFieldsVisibility();
+
+		this.form.discoverAllFields();
+		this.initial_form_fields = this.#getFormFields();
+		this.form_element.style.display = '';
+		this.overlay.recoverFocus();
+
+		this.form.findFieldByName('interfaceid')?.setChanged();
+		this.form.findFieldByName('type').setChanged();
+		this.form.validateChanges(['interfaceid', 'type']);
+
+		this.form.findFieldByName('aggregated_columns')
+			.setButtonOnBlur('js-add-aggregated-column', 'telemetry-aggregated-column');
+	}
+
+	initForm(field_switches) {
+		new CViewSwitcher('allow_traps', 'change', field_switches.for_traps);
+		new CViewSwitcher('authtype', 'change', field_switches.for_authtype);
+		new CViewSwitcher('http_authtype', 'change', field_switches.for_http_auth_type);
+		new CViewSwitcher('type', 'change', field_switches.for_type);
+		new CViewSwitcher('value_type', 'change', field_switches.for_value_type);
+
+		this.field = {
+			custom_timeout: this.form_element.querySelectorAll('[name="custom_timeout"]'),
+			history: this.form_element.querySelector('[name="history"]'),
+			history_mode: this.form_element.querySelectorAll('[name="history_mode"]'),
+			key: this.form_element.querySelector('[name="key"]'),
+			key_button: this.form_element.querySelector('[name="key"] ~ .js-select-key'),
+			inherited_timeout: this.form_element.querySelector('[name="inherited_timeout"]'),
+			snmp_oid: this.form_element.querySelector('[name="snmp_oid"]'),
+			timeout: this.form_element.querySelector('[name="timeout"]'),
+			trends: this.form_element.querySelector('[name="trends"]'),
+			trends_mode: this.form_element.querySelectorAll('[name="trends_mode"]'),
+			type: this.form_element.querySelector('[name="type"]'),
+			url: this.form_element.querySelector('[name="url"]'),
+			username: this.form_element.querySelector('[name=username]'),
+			value_type: this.form_element.querySelector('[name="value_type"]'),
+			value_type_steps: this.form_element.querySelector('[name="value_type_steps"]'),
+			ipmi_sensor: this.form_element.querySelector('[name="ipmi_sensor"]'),
+			request_method: this.form_element.querySelector('[name="request_method"'),
+			retrieve_mode: this.form_element.querySelectorAll('[name="retrieve_mode"]'),
+			signal_type: this.form_element.querySelector('[name="signal_type"]'),
+			metric_point_type: this.form_element.querySelectorAll('[name="metric_point_type"]'),
+			evaltype: this.form_element.querySelector('[name="evaltype"]'),
+			formula: this.form_element.querySelector('[name="formula"]'),
+			expression: this.form_element.querySelector('#expression')
+		};
+		this.label = {
+			value_type_hint: this.form_element.querySelector('[for="label-value-type"] .js-hint'),
+			username: this.form_element.querySelector('[for=username]'),
+			ipmi_sensor: this.form_element.querySelector('[for="ipmi_sensor"]'),
+			history_hint: this.form_element.querySelector('[for="history"] .js-history-hint'),
+			trends_hint: this.form_element.querySelector('[for="trends"] .js-trends-hint'),
+			trends_storage_hint: this.form_element.querySelector('[for="trends"] .js-trends-storage-hint')
+		};
+		jQuery('#parameters-table').dynamicRows({
+			template: '#parameter-row-tmpl',
+			rows: this.form_data.parameters,
+			allow_empty: true
+		});
+		jQuery('#query-fields-table').dynamicRows({
+			template: '#query-field-row-tmpl',
+			rows: this.form_data.query_fields,
+			allow_empty: true,
+			sortable: true,
+			sortable_options: {
+				target: 'tbody',
+				selector_handle: 'div.<?= ZBX_STYLE_DRAG_ICON ?>',
+				freeze_end: 1,
+				enable_sorting: !this.form_readonly
+			}
+		});
+		jQuery('#headers-table').dynamicRows({
+			template: '#item-header-row-tmpl',
+			rows: this.form_data.headers,
+			allow_empty: true,
+			sortable: true,
+			sortable_options: {
+				target: 'tbody',
+				selector_handle: 'div.<?= ZBX_STYLE_DRAG_ICON ?>',
+				freeze_end: 1,
+				enable_sorting: !this.form_readonly
+			}
+		});
+		jQuery('#columns-table').dynamicRows({
+			template: '#column-row-tmpl',
+			rows: this.form_data.columns,
+			allow_empty: true,
+			sortable: true,
+			sortable_options: {
+				target: 'tbody',
+				selector_span: ':not(.error-container-row)',
+				selector_handle: 'div.<?= ZBX_STYLE_DRAG_ICON ?>',
+				freeze_end: 1,
+				enable_sorting: !this.form_readonly
+			}
+		}).on('afteradd.dynamicRows', () => {
+			this.#selectNextColumn();
+		}).on('afterremove.dynamicRows', () => {
+			this.#toggleSelectedColumns();
+		});
+
+		this.form_element.querySelectorAll('#delay-flex-table .form_row')?.forEach(row => {
+			const flexible = row.querySelector('[name$="[type]"]:checked').value == ITEM_DELAY_FLEXIBLE;
+
+			row.querySelector('[name$="[delay]"]').classList.toggle(ZBX_STYLE_DISPLAY_NONE, !flexible);
+			row.querySelector('[name$="[period]"]').classList.toggle(ZBX_STYLE_DISPLAY_NONE, !flexible);
+			row.querySelector('[name$="[schedule]"]').classList.toggle(ZBX_STYLE_DISPLAY_NONE, flexible);
+		});
+
+		const authtype = document.getElementById('authtype');
+		const passphrase = document.getElementById('passphrase');
+		const password = document.getElementById('password');
+
+		authtype.addEventListener('change', () => {
+			if (authtype.value == <?= ITEM_AUTHTYPE_PASSWORD ?>) {
+				password.value = passphrase.value;
+			}
+			else {
+				passphrase.value = password.value;
+			}
+		});
+
+		// Initialising last_inferred_type start value
+		this.last_inferred_type = this.#getInferredValueType(this.field.key.value);
+	}
+
+	initFormCustomIntervals() {
+		const table = document.getElementById('delay-flex-table');
+		const row_tmpl = document.getElementById('delay-flex-row-tmpl');
+
+		table.addEventListener('click', e => {
+			if (e.target.classList.contains('element-table-add')) {
+				const tmpl = new Template(row_tmpl.innerHTML);
+				const value_keys = Object.keys(this.form.findFieldByName('delay_flex').getValue());
+				const end_key = value_keys.length ? Math.max(...value_keys) : -1;
+
+				e.target.closest('tr').insertAdjacentHTML('beforebegin', tmpl.evaluate({
+					rowNum: end_key + 1,
+				}));
+			}
+			else if (e.target.classList.contains('element-table-remove')) {
+				e.target.closest('tr').nextSibling.remove();
+				e.target.closest('tr').remove();
+
+				this.#updateTelemetryIndicators();
+			}
+		});
+
+		table.addEventListener('input', e => {
+			if (e.target.matches('[name$="[delay]"]')) {
+				this.#updateTelemetryIndicators();
+			}
+		});
+	}
+
+	#selectNextColumn() {
+		const selects = this.form_element.querySelectorAll('#columns-table .js-column');
+
+		if (selects.length === 0) {
+			return;
+		}
+
+		const last_select = selects[selects.length - 1];
+		const selected_options = [...selects].slice(0, -1).map(select => select.value);
+		const available_options = this.#getTelemetryColumnsOptions();
+
+		let next_option = available_options.find(option => !selected_options.includes(option));
+
+		if (next_option === undefined) {
+			const first_complex_value = this.telemetry_columns_config.complex
+				.filter(complex_option => available_options.some(option => option === complex_option))
+				.sort()[0];
+			next_option = available_options.find(option => option === first_complex_value);
+		}
+
+		if (last_select.value === next_option) {
+			this.#onTelemetryColumnsSelectChange(last_select);
+		}
+		else {
+			last_select.value = next_option;
+		}
+	}
+
+	#toggleSelectedColumns() {
+		const selects = this.form_element.querySelectorAll('#columns-table .js-column');
+		const selected_options = [...selects]
+			.filter(select => !this.telemetry_columns_config.complex.includes(select.value))
+			.map(select => select.value);
+		const available_options = this.#getTelemetryColumnsOptions();
+
+		for (const select of selects) {
+			const disabled_options = selected_options.filter(option => option !== select.value);
+
+			for (const option of select.getOptions()) {
+				option.disabled = !available_options.includes(String(option.value))
+					|| disabled_options.includes(String(option.value));
+			}
+		}
+	}
+
+	initItemPrototypeForm() {
+		let node;
+		const master_item = this.form_element.querySelector('#master_itemid').closest('.multiselect-control');
+
+		node = document.createElement('div');
+		node.classList.add(ZBX_STYLE_FORM_INPUT_MARGIN);
+		master_item.append(node);
+
+		node = document.createElement('button');
+		node.classList.add(ZBX_STYLE_BTN_GREY);
+		node.setAttribute('name', 'master-item-prototype');
+		node.disabled = this.form_readonly;
+		node.textContent = <?= json_encode(_('Select prototype')) ?>;
+		master_item.append(node);
+	}
+
+	initEvents() {
+		// Item tab events.
+		this.field.key.addEventListener('help_items.paste', this.#keyChangeHandlerPopUp.bind(this));
+		this.field.key.addEventListener('keyup', this.#keyChangeHandler.bind(this));
+		this.field.key_button?.addEventListener('click', this.#keySelectClickHandler.bind(this));
+		this.field.snmp_oid.addEventListener('keyup', this.updateFieldsVisibility.bind(this));
+		this.field.type.addEventListener('change', this.#typeChangeHandler.bind(this));
+		this.field.value_type.addEventListener('change', this.#valueTypeChangeHandler.bind(this));
+		this.field.request_method.addEventListener('change', this.updateFieldsVisibility.bind(this));
+		this.field.signal_type.addEventListener('change', this.updateFieldsVisibility.bind(this));
+
+		for (const radio of this.field.metric_point_type) {
+			radio.addEventListener('change', this.updateFieldsVisibility.bind(this));
+		}
+
+		this.field.evaltype.addEventListener('change', this.updateFieldsVisibility.bind(this));
+
+		for (const name of ['delay', 'lookback_limit', 'granularity']) {
+			this.form_element.querySelector(`[name="${name}"]`)
+				.addEventListener('input', () => this.#updateTelemetryIndicators());
+		}
+
+		this.form_element.querySelector('.js-add-aggregated-column')
+			.addEventListener('click', e => this.#openAggregatedColumnModal(e.target));
+
+		this.form_element.querySelector('.js-add-condition')
+			.addEventListener('click', e => this.#openConditionModal(e.target));
+
+		this.form_element.querySelector('#columns-table').addEventListener('change', e => {
+			if (e.target.classList.contains('js-column')) {
+				this.#onTelemetryColumnsSelectChange(e.target);
+			}
+		});
+
+		for (const id of ['aggregated-columns-table', 'conditions-table']) {
+			this.form_element.querySelector(`#${id}`).addEventListener('click', e => {
+				if (e.target.classList.contains('js-remove-row')) {
+					const row = e.target.closest('tr');
+
+					this.#removeRelatedErrorContainer(row);
+					row.remove();
+
+					this.updateFieldsVisibility();
+				}
+			});
+		}
+
+		this.form_element.querySelector('#aggregated-columns-table').addEventListener('click', e => {
+			if (e.target.classList.contains('js-edit-row')) {
+				this.#openAggregatedColumnModal(e.target, e.target.closest('tr'));
+			}
+		});
+
+		this.form_element.querySelector('#conditions-table').addEventListener('click', e => {
+			if (e.target.classList.contains('js-edit-row')) {
+				this.#openConditionModal(e.target, e.target.closest('tr'));
+			}
+		});
+
+		this.form_element.addEventListener('click', e => {
+			const target = e.target;
+
+			if (target.readOnly) {
+				return;
+			}
+
+			switch (target.getAttribute('name')) {
+				case 'custom_timeout':
+				case 'history_mode':
+				case 'trends_mode':
+					this.updateFieldsVisibility();
+
+					break;
+
+				case 'parseurl':
+					const url = parseUrlString(this.field.url.value);
+
+					if (url === false) {
+						return this.#showErrorDialog(target.getAttribute('error-message'), target);
+					}
+
+					const has_pairs = url.pairs.length != 0;
+
+					if (has_pairs) {
+						const dynamic_rows = jQuery('#query-fields-table').data('dynamicRows');
+
+						dynamic_rows.addRows(url.pairs);
+						dynamic_rows.removeRows(row => [].filter.call(
+								row.querySelectorAll('z-textarea-flexible'),
+								textarea => textarea.value === ''
+							).length == 2
+						);
+					}
+
+					this.field.url.value = url.url;
+
+					if (has_pairs) {
+						setTimeout(() => {
+							const fields = this.form.findFieldByName('query_fields').getFields();
+							Object.values(fields).entries().forEach(([index, field]) => field.setChanged());
+							this.form.validateChanges(['query_fields']);
+						}, 0);
+					}
+
+					break;
+			}
+		});
+		this.form_element.querySelector('#delay-flex-table').addEventListener('click', e => {
+			this.#intervalTypeChangeHandler(e);
+			this.#updateTelemetryIndicators();
+		});
+
+		const updateSortOrder = (table, field_name) => {
+			table.querySelectorAll('.form_row').forEach((row, index) => {
+				for (const field of row.querySelectorAll(`[name^="${field_name}["]`)) {
+					field.name = field.name.replace(/\[\d+]/g, `[${index}]`);
+				}
+			});
+		};
+		jQuery('#query-fields-table').on('tableupdate.dynamicRows', e => updateSortOrder(e.target, 'query_fields'));
+		jQuery('#headers-table').on('tableupdate.dynamicRows', e => updateSortOrder(e.target, 'headers'));
+		jQuery('#columns-table').on('tableupdate.dynamicRows', e => updateSortOrder(e.target, 'columns'));
+
+		// Tags tab events.
+		document.getElementById('show_inherited_tags')
+			.addEventListener('change', e => this.#updateTagsList(e.target.value));
+
+		// Preprocessing tab events.
+		this.field.value_type_steps.addEventListener('change', e => this.#valueTypeChangeHandler(e));
+		this.form_element.querySelector('#processing-tab').addEventListener('click', e => {
+			const target = e.target;
+
+			if (target.matches('.element-table-add') || target.matches('.element-table-remove')) {
+				this.updateFieldsVisibility();
+			}
+		});
+	}
+
+	#initPopupListeners() {
+		const subscriptions = [];
+
+		for (const action of ['template.edit', 'proxy.edit', 'item.edit', 'item.prototype.edit']) {
+			subscriptions.push(
+				ZABBIX.EventHub.subscribe({
+					require: {
+						context: CPopupManager.EVENT_CONTEXT,
+						event: CPopupManagerEvent.EVENT_OPEN,
+						action
+					},
+					callback: ({data, event}) => {
+						if (data.action_parameters.itemid === this.form_data.itemid || this.form_data.itemid === 0) {
+							return;
+						}
+
+						if (!this.#isConfirmed()) {
+							event.preventDefault();
+						}
+					}
+				})
+			);
+		}
+
+		subscriptions.push(
+			ZABBIX.EventHub.subscribe({
+				require: {
+					context: CPopupManager.EVENT_CONTEXT,
+					event: CPopupManagerEvent.EVENT_END_SCRIPTING,
+					action: this.overlay.dialogueid
+				},
+				callback: () => ZABBIX.EventHub.unsubscribeAll(subscriptions)
+			})
+		);
+	}
+
+	#isConfirmed() {
+		return JSON.stringify(this.initial_form_fields) === JSON.stringify(this.#getFormFields())
+			|| window.confirm(<?= json_encode(_('Any changes made in the current form will be lost.')) ?>);
+	}
+
+	initItemPrototypeEvents() {
+		this.form_element.querySelector('[name="master-item-prototype"]').addEventListener('click', e => {
+			this.#openMasterItemPrototypePopup();
+
+			return cancelEvent(e);
+		});
+	}
+
+	clone() {
+		this.overlay = ZABBIX.PopupManager.open(
+			this.source === 'itemprototype' ? 'item.prototype.edit' : 'item.edit',
+			{clone: 1, ...getFormFields(this.form_element)},
+			{reuse_existing: false}
+		);
+	}
+
+	create() {
+		const fields = this.#getFormFields();
+		const curl = new Curl('zabbix.php');
+
+		curl.setArgument('action', this.actions.create);
+
+		this.form.validateSubmit(fields).then(result => {
+			if (!result) {
+				this.overlay.unsetLoading();
+				return;
+			}
+
+			this.#post(curl.getUrl(), fields);
+		});
+	}
+
+	update() {
+		const fields = this.#getFormFields();
+		const curl = new Curl('zabbix.php');
+
+		curl.setArgument('action', this.actions.update);
+
+		this.form.validateSubmit(fields).then(result => {
+			if (!result) {
+				this.overlay.unsetLoading();
+				return;
+			}
+
+			this.#post(curl.getUrl(), fields);
+		});
+	}
+
+	test() {
+		this.form.findFieldByName('params_f').setChanged();
+		this.#tabs.preprocessing.test(true, true, this.footer.querySelector('.js-test-item'), -2, ['params_f']);
+	}
+
+	delete() {
+		const data = {
+			context: this.form_data.context,
+			itemids: [this.form_data.itemid]
+		}
+		const curl = new Curl('zabbix.php');
+
+		curl.setArgument('action', this.actions.delete);
+		this.#post(curl.getUrl(), data);
+	}
+
+	clear() {
+		const data = {
+			context: this.form_data.context,
+			itemids: [this.form_data.itemid]
+		}
+		const curl = new Curl('zabbix.php');
+
+		curl.setArgument('action', 'item.clear');
+		this.#post(curl.getUrl(), data, true);
+	}
+
+	execute() {
+		const data = {
+			discovery_rule: this.form_data.discovery_rule,
+			itemids: [this.form_data.itemid]
+		}
+		const curl = new Curl('zabbix.php');
+
+		curl.setArgument('action', 'item.execute');
+		this.#post(curl.getUrl(), data, true);
+	}
+
+	updateFieldsVisibility() {
+		const type = parseInt(this.field.type.value, 10);
+		const key = this.field.key.value;
+		const username_required = type == ITEM_TYPE_SSH || type == ITEM_TYPE_TELNET;
+		const ipmi_sensor_required = type == ITEM_TYPE_IPMI && key !== 'ipmi.get';
+		const preprocessing_active = this.form_element
+			.querySelector('[name^="preprocessing"][name$="[type]"]') !== null;
+
+		this.#updateActionButtons();
+		this.#updateCustomIntervalVisibility();
+		this.#updateHistoryModeVisibility();
+		this.#updateTrendsModeVisibility();
+		this.#updateValueTypeHintVisibility(preprocessing_active);
+		this.#updateValueTypeOptionVisibility();
+		this.#updateRetrieveModeVisibility();
+		this.#updateTimeoutVisibility();
+		this.#updateTimeoutOverrideVisibility();
+		this.#updateTelemetryVisibility();
+		this.field.key_button?.toggleAttribute('disabled', this.type_with_key_select.indexOf(type) == -1);
+		this.field.username[username_required ? 'setAttribute' : 'removeAttribute']('aria-required', 'true');
+		this.label.username.classList.toggle(ZBX_STYLE_FIELD_LABEL_ASTERISK, username_required);
+		this.field.ipmi_sensor[ipmi_sensor_required ? 'setAttribute' : 'removeAttribute']('aria-required', 'true');
+		this.label.ipmi_sensor.classList.toggle(ZBX_STYLE_FIELD_LABEL_ASTERISK, ipmi_sensor_required);
+		this.#host_interface_selector.setType(type);
+		this.form_element.querySelectorAll('.js-item-preprocessing-type').forEach(
+			node => node.classList.toggle(ZBX_STYLE_DISPLAY_NONE, !preprocessing_active)
+		);
+	}
+
+	#getTelemetryColumnsOptions() {
+		const signal_type = this.field.signal_type.value;
+
+		if (signal_type == this.telemetry_signal_type_metrics) {
+			const metric_point_type = this.form_element.querySelector('[name="metric_point_type"]:checked').value;
+
+			return this.telemetry_columns_config.columns[signal_type][metric_point_type];
+		}
+		else {
+			return this.telemetry_columns_config.columns[signal_type];
+		}
+	}
+
+	#populateColumnSelect(select) {
+		const value = select.value;
+		const names = this.#getTelemetryColumnsOptions();
+		const is_unavailable = value !== null && value !== '' && !names.includes(value);
+		const options = is_unavailable ? [...names, value].sort() : names;
+
+		for (const option of select.getOptions()) {
+			option.hidden = !options.includes(option.value);
+		}
+
+		if (value === null || value === '') {
+			select.preselectHightlighted();
+
+			return;
+		}
+
+		if (is_unavailable) {
+			select.getOptionByValue(value).disabled = true;
+		}
+	}
+
+	#toggleAttributeKey(select) {
+		const is_complex = this.telemetry_columns_config.complex.includes(select.value);
+		const attribute_key = select.closest('tr').querySelector('.js-attribute-key');
+
+		attribute_key.style.display = is_complex ? '' : 'none';
+
+		if (!is_complex) {
+			attribute_key.value = '';
+		}
+	}
+
+	#onTelemetryColumnsSelectChange(select) {
+		this.#populateColumnSelect(select);
+		this.#toggleAttributeKey(select);
+
+		this.#toggleSelectedColumns();
+	}
+
+	#updateTelemetryColumns() {
+		for (const select of this.form_element.querySelectorAll('#columns-table .js-column')) {
+			this.#populateColumnSelect(select);
+			this.#toggleAttributeKey(select);
+		}
+
+		this.#toggleSelectedColumns();
+		this.form.validateChanges(['columns', 'aggregated_columns', 'conditions']);
+	}
+
+	#removeRelatedErrorContainer(row) {
+		const next_sibling = row.nextElementSibling;
+
+		if (next_sibling !== null && next_sibling.classList.contains('error-container-row')) {
+			next_sibling.remove();
+		}
+	}
+
+	#getExistingAliases(exclude_row = null) {
+		const rows = this.form_element.querySelectorAll('#aggregated-columns-table tbody [data-row_index]');
+
+		return [...rows]
+			.filter(row => row !== exclude_row)
+			.map(row => row.querySelector(`[name="aggregated_columns[${row.dataset.row_index}][alias]"]`).value);
+	}
+
+	#openAggregatedColumnModal(trigger, row = null) {
+		const signal_type = this.field.signal_type.value;
+		const metric_point_type = this.form_element.querySelector('[name="metric_point_type"]:checked').value;
+
+		const parameters = {
+			signal_type: signal_type,
+			metric_point_type: metric_point_type,
+			existing_aliases: this.#getExistingAliases(row)
+		};
+
+		if (row !== null) {
+			const row_index = row.dataset.row_index;
+
+			parameters.edit = '1';
+			parameters.row_index = row_index;
+			parameters.column = row.querySelector(`[name="aggregated_columns[${row_index}][column]"]`).value;
+			parameters.function = row.querySelector(`[name="aggregated_columns[${row_index}][function]"]`).value;
+			parameters.percentile = row.querySelector(`[name="aggregated_columns[${row_index}][percentile]"]`).value;
+			parameters.alias = row.querySelector(`[name="aggregated_columns[${row_index}][alias]"]`).value;
+		}
+		else {
+			let row_index = 0;
+
+			while (this.form_element.querySelector(`#aggregated-columns-table [data-row_index="${row_index}"]`)
+					!== null) {
+				row_index++;
+			}
+
+			parameters.row_index = row_index;
+		}
+
+		const overlay = PopUp('popup.telemetry.aggregatedcolumn.edit', parameters, {
+			dialogueid: 'telemetry-aggregated-column',
+			dialogue_class: 'modal-popup-medium',
+			trigger_element: trigger
+		});
+
+		overlay.$dialogue[0].addEventListener('telemetry_aggregated_column.submit',
+			e => this.#addAggregatedColumnRow(e.detail)
+		);
+	}
+
+	#openConditionModal(trigger, row = null) {
+		const signal_type = this.field.signal_type.value;
+		const metric_point_type = this.form_element.querySelector('[name="metric_point_type"]:checked').value;
+
+		const parameters = {
+			signal_type: signal_type,
+			metric_point_type: metric_point_type
+		};
+
+		if (this.source === 'itemprototype') {
+			parameters.parent_discoveryid = this.form_data.parent_discoveryid;
+		}
+
+		if (row !== null) {
+			const row_index = row.dataset.row_index;
+
+			parameters.edit = '1';
+			parameters.row_index = row_index;
+			parameters.column = row.querySelector(`[name="conditions[${row_index}][column]"]`).value;
+			parameters.attribute_key = row.querySelector(`[name="conditions[${row_index}][attribute_key]"]`).value;
+			parameters.operator = row.querySelector(`[name="conditions[${row_index}][operator]"]`).value;
+			parameters.value = row.querySelector(`[name="conditions[${row_index}][value]"]`).value;
+		}
+		else {
+			let row_index = 0;
+
+			while (this.form_element.querySelector(`#conditions-table [data-row_index="${row_index}"]`) !== null) {
+				row_index++;
+			}
+
+			parameters.row_index = row_index;
+		}
+
+		const overlay = PopUp('popup.telemetry.condition.edit', parameters, {
+			dialogueid: 'telemetry-condition',
+			dialogue_class: 'modal-popup-medium',
+			trigger_element: trigger
+		});
+
+		overlay.$dialogue[0].addEventListener('telemetry_condition.submit', e => {
+			this.#addConditionRow(e.detail);
+			this.updateFieldsVisibility();
+		});
+	}
+
+	#addAggregatedColumnRow(data) {
+		const tbody = this.form_element.querySelector('#aggregated-columns-table tbody');
+		const percentile = data.percentile ?? '';
+		let function_label = this.telemetry_function_labels[data.function];
+
+		if (data.function == <?= AGGREGATE_PERCENTILE ?>) {
+			function_label += `(${data.column}, ${percentile})`;
+		}
+		else if (data.function != <?= AGGREGATE_COUNT ?>) {
+			function_label += `(${data.column})`;
+		}
+
+		const source = document.getElementById('aggregated-column-row-tmpl').innerHTML;
+		const html = new Template(source).evaluate({...data, function_label, percentile});
+		const existing = tbody.querySelector(`[data-row_index="${data.row_index}"]`);
+
+		if (existing !== null) {
+			this.#removeRelatedErrorContainer(existing);
+
+			existing.insertAdjacentHTML('afterend', html);
+			existing.remove();
+		}
+		else {
+			tbody.querySelector('.js-add-aggregated-column').closest('tr').insertAdjacentHTML('beforebegin', html);
+		}
+	}
+
+	#addConditionRow(data) {
+		const config = this.telemetry_columns_config;
+		const tbody = this.form_element.querySelector('#conditions-table tbody');
+		const is_complex = config.complex.includes(data.column);
+		const is_exists = data.operator == <?= CONDITION_OPERATOR_EXISTS ?>;
+		const source = document.getElementById('condition-row-tmpl').innerHTML;
+		const existing = tbody.querySelector(`[data-row_index="${data.row_index}"]`);
+
+		const used_formulaids = new Set(
+			[...tbody.querySelectorAll('input[name$="[formulaid]"]')].map(input => input.value)
+		);
+
+		let formulaid_index = 0;
+
+		while (used_formulaids.has(num2letter(formulaid_index))) {
+			formulaid_index++;
+		}
+
+		const formulaid = existing !== null
+			? existing.querySelector('input[name$="[formulaid]"]').value
+			: data.formulaid ?? num2letter(formulaid_index);
+
+		const html = new Template(source).evaluate({
+			...data,
+			formulaid,
+			attribute_key_name: is_complex ? data.attribute_key : '',
+			operator_name: this.telemetry_operator_labels[data.operator],
+			value_name: is_exists ? '' : data.value
+		});
+
+		if (existing !== null) {
+			this.#removeRelatedErrorContainer(existing);
+
+			existing.insertAdjacentHTML('afterend', html);
+			existing.remove();
+		}
+		else {
+			tbody.querySelector('.js-add-condition').closest('tr').insertAdjacentHTML('beforebegin', html);
+		}
+	}
+
+	#initTelemetryRows() {
+		if (this.field.type.value != ITEM_TYPE_TELEMETRY_QUERY) {
+			return;
+		}
+
+		this.form_data.aggregated_columns.forEach((column, row_index) => {
+			this.#addAggregatedColumnRow({...column, row_index});
+		});
+
+		this.form_data.conditions.forEach((condition, row_index) => {
+			this.#addConditionRow({...condition, row_index});
+		});
+	}
+
+	#updateTelemetryVisibility() {
+		if (this.field.type.value != ITEM_TYPE_TELEMETRY_QUERY) {
+			return;
+		}
+
+		const is_metrics = this.field.signal_type.value == this.telemetry_signal_type_metrics;
+		const switcher = globalAllObjForViewSwitcher['type'];
+
+		// "Metric points" is shown only for "Metrics".
+		['js-item-metric-point-type-label', 'js-item-metric-point-type-field'].forEach(
+			id => switcher[is_metrics ? 'showObj' : 'hideObj']({id})
+		);
+
+		// "Type of calculation" is shown only when there is more than one condition.
+		const has_calculation = this.form_element
+			.querySelectorAll('#conditions-table tbody [data-row_index]').length > 1;
+
+		if (!has_calculation) {
+			this.field.evaltype.value = <?= CONDITION_EVAL_TYPE_AND_OR ?>;
+		}
+
+		['js-item-evaltype-label', 'js-item-evaltype-field'].forEach(
+			id => switcher[has_calculation ? 'showObj' : 'hideObj']({id})
+		);
+
+		// The formula field is shown only for the "Custom expression" calculation type.
+		const is_custom_expression = this.field.evaltype.value == CONDITION_EVAL_TYPE_EXPRESSION;
+
+		this.field.formula.style.display = is_custom_expression ? '' : 'none';
+		this.field.expression.style.display = is_custom_expression ? 'none' : '';
+
+		if (!is_custom_expression) {
+			this.field.expression.innerHTML = getConditionFormula(this.#getTelemetryConditions(),
+				+this.field.evaltype.value
+			);
+		}
+
+		this.#updateTelemetryIndicators();
+		this.#updateTelemetryColumns();
+	}
+
+	#getTelemetryConditions() {
+		const conditions = [];
+
+		for (const row of this.form_element.querySelectorAll('#conditions-table tbody [data-row_index]')) {
+			const row_index = row.dataset.row_index;
+			const formulaid = row.querySelector(`[name="conditions[${row_index}][formulaid]"]`).value;
+			const column = row.querySelector(`[name="conditions[${row_index}][column]"]`).value;
+			const attribute_key = row.querySelector(`[name="conditions[${row_index}][attribute_key]"]`).value;
+
+			conditions.push({
+				id: formulaid,
+				type: `${column}.${attribute_key}`
+			});
+		}
+
+		return conditions;
+	}
+
+	#updateTelemetryIndicators() {
+		if (this.field.type.value != ITEM_TYPE_TELEMETRY_QUERY) {
+			return;
+		}
+
+		const delays = this.#getDelays();
+		const lookback_limit = timeUnitToSeconds(
+			this.form_element.querySelector('[name="lookback_limit"]').value.trim(), false
+		);
+		const granularity = timeUnitToSeconds(
+			this.form_element.querySelector('[name="granularity"]').value.trim(), false
+		);
+
+		const data_gaps = lookback_limit !== null && delays.some(delay => lookback_limit < delay);
+		const data_overlap = granularity !== null && delays.some(delay => granularity > delay);
+
+		this.form_element.querySelector('.js-lookback-limit-warning').style.display = data_gaps ? '' : 'none';
+		this.form_element.querySelector('.js-granularity-warning').style.display = data_overlap ? '' : 'none';
+	}
+
+	#getDelays() {
+		const delays = [];
+		const delay = timeUnitToSeconds(this.form_element.querySelector('[name="delay"]').value.trim(), false);
+
+		if (delay > 0) {
+			delays.push(delay);
+		}
+
+		for (const row of this.form_element.querySelectorAll('#delay-flex-table .form_row')) {
+			if (row.querySelector('[name$="[type]"]:checked').value != ITEM_DELAY_FLEXIBLE) {
+				continue;
+			}
+
+			const flexible_delay = timeUnitToSeconds(row.querySelector('[name$="[delay]"]').value.trim(), false);
+
+			if (flexible_delay > 0) {
+				delays.push(flexible_delay);
+			}
+		}
+
+		return delays;
+	}
+
+	#showErrorDialog(body, trigger_element) {
+		const overlay = overlayDialogue({
+			title: <?= json_encode(_('Error')) ?>,
+			class: 'modal-popup',
+			content: jQuery('<span>').html(body),
+			buttons: [{
+				title: <?= json_encode(_('Ok')) ?>,
+				class: 'btn-alt',
+				focused: true,
+				action: function() {}
+			}]
+		}, {
+			position: Overlay.prototype.POSITION_CENTER,
+			trigger_element: jQuery(trigger_element)
+		});
+
+		// Display the close button after the screen reader announces the dialog title.
+		overlay.$dialogue.$head.$close_button.show();
+	}
+
+	#getFormFields() {
+		const values = this.form.getAllValues();
+
+		if (values.delay === undefined) {
+			values.delay = '';
+		}
+
+		const delay_flex = {};
+		for (let key in values.delay_flex) {
+			let { schedule, period, type, delay } = values.delay_flex[key];
+			type = parseInt(type);
+
+			if (type == <?= ITEM_DELAY_FLEXIBLE ?> && delay === '' && period === '') {
+				continue;
+			}
+
+			if (type == <?= ITEM_DELAY_SCHEDULING ?> && schedule === '') {
+				continue;
+			}
+
+			delay_flex[key] = values.delay_flex[key]
+		}
+
+		return {...values, ...{delay_flex}};
+	}
+
+	#post(url, data, keep_open = false) {
+		if (this.form_element[CSRF_TOKEN_NAME]) {
+			data[CSRF_TOKEN_NAME] = this.form_element[CSRF_TOKEN_NAME].value;
+		}
+
+		fetch(url, {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(data)
+		})
+			.then(response => response.json())
+			.then(response => {
+				if ('error' in response) {
+					throw {error: response.error};
+				}
+
+				if ('form_errors' in response) {
+					this.form.setErrors(response.form_errors, true, true);
+					this.form.renderErrors();
+
+					return;
+				}
+
+				if (keep_open) {
+					const message_box = makeMessageBox('good', response.success.messages, response.success.title)[0];
+
+					this.form_element.parentNode.querySelectorAll('.msg-good,.msg-bad,.msg-warning')
+						.forEach(node => node.remove());
+					this.form_element.parentNode.insertBefore(message_box, this.form_element);
+				}
+				else {
+					const action = (new Curl(url)).getArgument('action');
+
+					overlayDialogueDestroy(this.overlay.dialogueid);
+
+					this.dialogue.dispatchEvent(new CustomEvent('dialogue.submit', {detail: {action, ...response}}));
+				}
+			})
+			.catch(exception => {
+				for (const element of this.form_element.parentNode.children) {
+					if (element.matches('.msg-good, .msg-bad, .msg-warning')) {
+						element.parentNode.removeChild(element);
+					}
+				}
+
+				let title, messages;
+
+				if (typeof exception === 'object' && 'error' in exception) {
+					title = exception.error.title;
+					messages = exception.error.messages;
+				}
+				else {
+					messages = [<?= json_encode(_('Unexpected server error.')) ?>];
+				}
+
+				const message_box = makeMessageBox('bad', messages, title)[0];
+
+				this.form_element.parentNode.insertBefore(message_box, this.form_element);
+				this.#updateActionButtons();
+			})
+			.finally(() => {
+				this.overlay.unsetLoading();
+				this.#updateActionButtons();
+			});
+	}
+
+	#isTestableItem() {
+		const key = this.field.key.value;
+		const type = parseInt(this.field.type.value, 10);
+
+		return type == ITEM_TYPE_SIMPLE
+			? key.substr(0, 7) !== 'vmware.' && key.substr(0, 8) !== 'icmpping'
+			: this.testable_item_types.indexOf(type) != -1;
+	}
+
+	#updateActionButtons() {
+		this.footer.querySelector('.js-test-item')?.toggleAttribute('disabled', !this.#isTestableItem());
+	}
+
+	#updateCustomIntervalVisibility() {
+		if (parseInt(this.field.type.value, 10) != ITEM_TYPE_ZABBIX_ACTIVE) {
+			return;
+		}
+
+		const fields = ['delay', 'js-item-delay-label', 'js-item-delay-field', 'js-item-flex-intervals-label',
+			'js-item-flex-intervals-field'
+		];
+		const action = (this.field.key.value.substr(0, 8) === 'mqtt.get') ? 'hideObj' : 'showObj';
+		const switcher = globalAllObjForViewSwitcher['type'];
+
+		fields.forEach(id => switcher[action]({id}));
+	}
+
+	#updateTagsList(show_inherited_tags) {
+		const fields = this.#getFormFields();
+		const data = {
+			tags: fields.tags,
+			show_inherited_tags,
+			itemid: fields.itemid,
+			hostid: fields.hostid
+		};
+
+		const url = new Curl('zabbix.php');
+		url.setArgument('action', 'item.tags.list');
+
+		if (this.tags_abort_controller !== null) {
+			this.tags_abort_controller.abort();
+		}
+
+		const abort_controller = new AbortController();
+		this.tags_abort_controller = abort_controller;
+
+		this.overlay.setLoading();
+
+		fetch(url.getUrl(), {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(data),
+			signal: abort_controller.signal
+		})
+			.then(response => response.json())
+			.then(response => {
+				this.tags_table.innerHTML = response.body;
+
+				if (!('readonly' in this.tags_table.dataset)) {
+					const $tags_table = jQuery(this.tags_table);
+
+					$tags_table.data('dynamicRows').counter = this.tags_table.querySelectorAll('tr.form_row').length;
+				}
+			})
+			.catch(message => {
+				if (abort_controller.signal.aborted) {
+					return;
+				}
+
+				this.form.addGeneralErrors({[t('Unexpected server error.')]: message});
+				this.form.renderErrors();
+				throw message;
+			})
+			.finally(() => {
+				if (this.tags_abort_controller !== abort_controller) {
+					return;
+				}
+
+				this.tags_abort_controller = null;
+				this.overlay.unsetLoading();
+				this.#updateActionButtons();
+			});
+	}
+
+	#updateTimeoutOverrideVisibility() {
+		const custom_timeout = [].filter.call(this.field.custom_timeout, e => e.matches(':checked')).pop();
+		const inherited_hidden = custom_timeout.value == ZBX_ITEM_CUSTOM_TIMEOUT_ENABLED;
+		const timeout_inaccessible = this.form_element.querySelector('#js-item-timeout-inaccessible');
+
+		this.form_element.timeout.classList.toggle(ZBX_STYLE_DISPLAY_NONE, !inherited_hidden);
+
+		if (timeout_inaccessible !== null) {
+			timeout_inaccessible.classList.toggle(ZBX_STYLE_DISPLAY_NONE, inherited_hidden);
+		}
+		else {
+			this.form_element.inherited_timeout.classList.toggle(ZBX_STYLE_DISPLAY_NONE, inherited_hidden);
+		}
+	}
+
+	#updateTimeoutVisibility() {
+		let action = '';
+		const key = this.field.key.value;
+		const type = parseInt(this.field.type.value, 10);
+		const switcher = globalAllObjForViewSwitcher['type'];
+		const toggle_fields = ['js-item-timeout-label', 'js-item-timeout-field'];
+
+		switch (type) {
+			case ITEM_TYPE_SIMPLE:
+				action = key.substring(0, 8) === 'icmpping' || key.substring(0, 7) === 'vmware.' ? 'hideObj' : 'showObj';
+				break;
+
+			case ITEM_TYPE_ZABBIX_ACTIVE:
+				action = key.substring(0, 8) === 'mqtt.get' ? 'hideObj' : 'showObj';
+				break;
+
+			case ITEM_TYPE_SNMP:
+				let snmp = this.field.snmp_oid.value.substring(0, 5);
+
+				action = snmp.substring(0, 5) !== 'walk[' && snmp.substring(0, 4) !== 'get[' ? 'hideObj' : 'showObj';
+				break;
+		}
+
+		if (action !== '') {
+			toggle_fields.forEach(id => switcher[action]({id}));
+		}
+	}
+
+	#updateRetrieveModeVisibility() {
+		const is_readonly = this.field.request_method.value == HTTPCHECK_REQUEST_HEAD;
+
+		this.field.retrieve_mode.forEach(radio => {
+			if (is_readonly && radio.value == <?= HTTPTEST_STEP_RETRIEVE_MODE_HEADERS ?>) {
+				radio.checked = true;
+			}
+
+			radio.readOnly = is_readonly || this.form_readonly;
+		});
+	}
+
+	#updateValueTypeHintVisibility(preprocessing_active) {
+		const key = this.field.key.value;
+		const value_type = this.field.value_type.value;
+		const inferred_type = this.#getInferredValueType(key);
+
+		this.label.value_type_hint.classList.toggle(ZBX_STYLE_DISPLAY_NONE,
+			preprocessing_active || inferred_type === null || value_type == inferred_type
+		);
+	}
+
+	#updateHistoryModeVisibility() {
+		const mode_field = [].filter.call(this.field.history_mode, e => e.matches(':checked')).pop(),
+			disabled = mode_field.value == ITEM_STORAGE_OFF && (!mode_field.readOnly || this.field.history.readOnly),
+			override = this.history_override[parseInt(this.field.value_type.value, 10)];
+
+		this.field.history.toggleAttribute('disabled', disabled);
+		this.field.history.classList.toggle(ZBX_STYLE_DISPLAY_NONE, disabled);
+
+		if (this.label.history_hint !== null) {
+			this.label.history_hint.classList.toggle(ZBX_STYLE_DISPLAY_NONE, disabled || override === undefined);
+			this.label.history_hint.querySelector('[data-hintbox="1"]').dataset.hintboxHtml =
+				this.history_override_hint_html + (override === '' ? '' : ` (${override})`);
+		}
+	}
+
+	#updateTrendsModeVisibility() {
+		const mode_field = [].filter.call(this.field.trends_mode, e => e.matches(':checked')).pop(),
+			disabled = mode_field.value == ITEM_STORAGE_OFF && (!mode_field.readOnly || this.field.trends.readOnly),
+			storage_value_type = this.storage_value_types.indexOf(parseInt(this.field.value_type.value, 10)) !== -1;
+
+		this.field.trends.toggleAttribute('disabled', disabled);
+		this.field.trends.classList.toggle(ZBX_STYLE_DISPLAY_NONE, disabled);
+		this.label.trends_hint?.classList.toggle(ZBX_STYLE_DISPLAY_NONE, disabled || storage_value_type);
+		this.label.trends_storage_hint?.classList.toggle(ZBX_STYLE_DISPLAY_NONE, disabled || !storage_value_type);
+	}
+
+	#updateValueTypeOptionVisibility() {
+		const disable_binary = this.field.type.value != ITEM_TYPE_DEPENDENT;
+		const disable_json = this.field.type.value == ITEM_TYPE_CALCULATED;
+
+		if (disable_binary && this.field.value_type.value == ITEM_VALUE_TYPE_BINARY) {
+			const value = this.field.value_type.getOptions().find(o => o.value != ITEM_VALUE_TYPE_BINARY).value;
+
+			this.field.value_type.value = value;
+			this.field.value_type_steps.value = value;
+		}
+
+		this.field.value_type.getOptionByValue(ITEM_VALUE_TYPE_BINARY).hidden = disable_binary;
+		this.field.value_type_steps.getOptionByValue(ITEM_VALUE_TYPE_BINARY).hidden = disable_binary;
+
+		if (disable_json && this.field.value_type.value == ITEM_VALUE_TYPE_JSON) {
+			const value = this.field.value_type.getOptions().find(o => o.value != ITEM_VALUE_TYPE_JSON).value;
+
+			this.field.value_type.value = value;
+			this.field.value_type_steps.value = value;
+		}
+
+		this.field.value_type.getOptionByValue(ITEM_VALUE_TYPE_JSON).hidden = disable_json;
+		this.field.value_type_steps.getOptionByValue(ITEM_VALUE_TYPE_JSON).hidden = disable_json;
+	}
+
+	#getInferredValueType(key) {
+		const type = this.field.type.value;
+		const search = key.split('[')[0].trim().toLowerCase();
+
+		if (!(type in this.value_type_keys) || search === '') {
+			return null;
+		}
+
+		if (search in this.value_type_keys[type]) {
+			return this.value_type_keys[type][search];
+		}
+
+		const matches = Object.entries(this.value_type_keys[type])
+							.filter(([key_name, value_type]) => key_name.startsWith(search));
+
+		return (matches.length && matches.every(([_, value_type]) => value_type == matches[0][1]))
+			? matches[0][1] : null;
+	}
+
+	#intervalTypeChangeHandler(e) {
+		const target = e.target;
+
+		if (!target.matches('[name$="[type]"]') || target.hasAttribute('readonly')) {
+			return;
+		}
+
+		const row = target.closest('.form_row');
+		const flexible = target.value == ITEM_DELAY_FLEXIBLE;
+
+		row.querySelector('[name$="[delay]"]').classList.toggle(ZBX_STYLE_DISPLAY_NONE, !flexible);
+		row.querySelector('[name$="[period]"]').classList.toggle(ZBX_STYLE_DISPLAY_NONE, !flexible);
+		row.querySelector('[name$="[schedule]"]').classList.toggle(ZBX_STYLE_DISPLAY_NONE, flexible);
+
+		this.#updateTelemetryIndicators();
+	}
+
+	#valueTypeChangeHandler(e) {
+		this.field.value_type.value = e.target.value;
+		this.field.value_type_steps.value = e.target.value;
+		this.updateFieldsVisibility();
+	}
+
+	#typeChangeHandler(e) {
+		this.field.inherited_timeout.value = this.inherited_timeouts[e.target.value] || '';
+
+		const custom_timeout_value = [...this.field.custom_timeout].filter(element => element.checked)[0].value;
+
+		if (custom_timeout_value != ZBX_ITEM_CUSTOM_TIMEOUT_ENABLED) {
+			this.field.timeout.value = this.field.inherited_timeout.value;
+		}
+
+		this.updateFieldsVisibility();
+	}
+
+	#keyChangeHandlerPopUp() {
+		this.#keyChangeHandler();
+		this.form.validateChanges(['key']);
+	}
+
+	#keyChangeHandler() {
+		const inferred_type = this.#getInferredValueType(this.field.key.value);
+
+		if (inferred_type !== null && this.last_inferred_type !== inferred_type) {
+			this.field.value_type.value = inferred_type;
+		}
+
+		this.last_inferred_type = inferred_type;
+
+		this.updateFieldsVisibility();
+	}
+
+	#keySelectClickHandler() {
+		// This will emit a custom "help_items.paste" event on the key choice.
+		PopUp('popup.generic', {
+			srctbl: 'help_items',
+			srcfld1: 'key',
+			dstfrm: this.form_element.getAttribute('name'),
+			dstfld1: 'key',
+			itemtype: this.field.type.value
+		}, {dialogue_class: 'modal-popup-generic'});
+	}
+
+	#openMasterItemPrototypePopup() {
+		const parameters = {
+			srctbl: 'item_prototypes',
+			srcfld1: 'itemid',
+			srcfld2: 'name',
+			dstfrm: this.form_element.getAttribute('name'),
+			dstfld1: 'master_itemid',
+			parent_discoveryid: this.form_data.parent_discoveryid,
+			excludeids: 'itemid' in this.form_data ? [this.form_data.itemid] : []
+		}
+
+		PopUp('popup.generic', parameters, {dialogue_class: 'modal-popup-generic'});
+	}
+}
+})();

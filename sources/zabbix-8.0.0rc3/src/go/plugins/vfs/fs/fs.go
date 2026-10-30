@@ -1,0 +1,208 @@
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+package vfsfs
+
+import (
+	"encoding/json"
+
+	"golang.zabbix.com/sdk/errs"
+	"golang.zabbix.com/sdk/plugin"
+)
+
+const (
+	statModeTotal = iota
+	statModeFree
+	statModeUsed
+	statModePFree
+	statModePUsed
+)
+
+var (
+	errInvalidParameters      = errs.New("invalid number of parameters")
+	errTooManyParameters      = errs.New("too many parameters")
+	errInvalidFirstParameter  = errs.New("invalid first parameter")
+	errInvalidSecondParameter = errs.New("invalid second parameter")
+)
+
+type FsStats struct {
+	Total uint64  `json:"total"`
+	Free  uint64  `json:"free"`
+	Used  uint64  `json:"used"`
+	PFree float64 `json:"pfree"`
+	PUsed float64 `json:"pused"`
+}
+
+type FsInfo struct {
+	FsName     *string  `json:"{#FSNAME},omitempty"`
+	FsType     *string  `json:"{#FSTYPE},omitempty"`
+	DriveLabel *string  `json:"{#FSLABEL},omitempty"`
+	DriveType  *string  `json:"{#FSDRIVETYPE},omitempty"`
+	Bytes      *FsStats `json:"bytes,omitempty"`
+	Inodes     *FsStats `json:"inodes,omitempty"`
+	FsOptions  *string  `json:"{#FSOPTIONS},omitempty"`
+}
+
+type FsInfoNew struct {
+	FsName     *string  `json:"fsname,omitempty"`
+	FsType     *string  `json:"fstype,omitempty"`
+	DriveLabel *string  `json:"fslabel,omitempty"`
+	DriveType  *string  `json:"fsdrivetype,omitempty"`
+	Bytes      *FsStats `json:"bytes,omitempty"`
+	Inodes     *FsStats `json:"inodes,omitempty"`
+	FsOptions  *string  `json:"options,omitempty"`
+}
+
+type Plugin struct {
+	plugin.Base
+}
+
+var impl Plugin
+
+// Export returns the value of the requested filesystem metric.
+func (p *Plugin) Export(key string, params []string, _ plugin.ContextProvider) (any, error) {
+	switch key {
+	case "vfs.fs.discovery":
+		return p.exportDiscovery(params)
+	case "vfs.fs.get":
+		return p.exportGet(params)
+	case "vfs.fs.size":
+		return p.export(params, getFsStats)
+	case "vfs.fs.inode":
+		return p.export(params, getFsInode)
+	default:
+		return nil, plugin.UnsupportedMetricError
+	}
+}
+
+func (p *Plugin) exportDiscovery(params []string) (any, error) {
+	if len(params) != 0 {
+		return nil, errInvalidParameters
+	}
+
+	d, getErr := p.getMountedFilesystems()
+	if getErr != nil {
+		return nil, getErr
+	}
+
+	b, marshalErr := json.Marshal(&d)
+	if marshalErr != nil {
+		return nil, errs.Wrap(marshalErr, "cannot marshal filesystem discovery data")
+	}
+
+	return string(b), nil
+}
+
+func (p *Plugin) exportGet(params []string) (any, error) {
+	if len(params) > 2 {
+		return nil, errTooManyParameters
+	}
+
+	var mode, mountpoint string
+
+	if len(params) > 0 {
+		mode = params[0]
+	}
+
+	if len(params) > 1 {
+		mountpoint = params[1]
+	}
+
+	var (
+		data []*FsInfoNew
+		err  error
+	)
+
+	switch mode {
+	case "", "full":
+		data, err = p.getFsInfoStats(mountpoint)
+	case "short":
+		data, err = p.getFsInfoShort(mountpoint)
+	default:
+		return nil, errInvalidFirstParameter
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	b, err := json.Marshal(data)
+	if err != nil {
+		return nil, errs.Wrap(err, "cannot marshal filesystem data")
+	}
+
+	return string(b), nil
+}
+
+func (p *Plugin) export(params []string, getStats func(string) (*FsStats, error)) (any, error) {
+	if len(params) < 1 || params[0] == "" {
+		return nil, errInvalidFirstParameter
+	}
+	if len(params) > 2 {
+		return nil, errTooManyParameters
+	}
+
+	mode, err := getMode(params)
+	if err != nil {
+		return nil, err
+	}
+
+	fsCaller := p.newFSCaller(getStats, 1)
+
+	stats, runErr := fsCaller.run(params[0])
+	if runErr != nil {
+		return nil, runErr
+	}
+
+	return getStatValue(stats, mode)
+}
+
+// getMode returns the filesystem statistics mode specified in params.
+func getMode(params []string) (int, error) {
+	if len(params) < 2 {
+		return statModeTotal, nil
+	}
+
+	switch params[1] {
+	case "total":
+		return statModeTotal, nil
+	case "free":
+		return statModeFree, nil
+	case "used":
+		return statModeUsed, nil
+	case "pfree":
+		return statModePFree, nil
+	case "pused":
+		return statModePUsed, nil
+	default:
+		return 0, errInvalidSecondParameter
+	}
+}
+
+func getStatValue(stats *FsStats, mode int) (any, error) {
+	switch mode {
+	case statModeTotal:
+		return stats.Total, nil
+	case statModeFree:
+		return stats.Free, nil
+	case statModeUsed:
+		return stats.Used, nil
+	case statModePFree:
+		return stats.PFree, nil
+	case statModePUsed:
+		return stats.PUsed, nil
+	default:
+		return nil, errInvalidSecondParameter
+	}
+}

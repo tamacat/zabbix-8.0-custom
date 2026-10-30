@@ -1,0 +1,118 @@
+<?php
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+
+/**
+ * Validate only trigger event name field expression macros, other macros will be ignored.
+ */
+class CEventNameValidator extends CValidator {
+
+	/**
+	 * Array of allowed hostnames used in expressions.
+	 *
+	 * @var array|null
+	 */
+	protected ?array $hostnames = null;
+
+	/**
+	 * Error message to be displayed in case any expression contains hostname which is not in the allowed list.
+	 * @var string|null
+	 */
+	protected ?string $message_hostnames = null;
+
+	/**
+	 * Returns true if the given $value is valid, or set's an error and returns false otherwise.
+	 *
+	 * @param $value
+	 *
+	 * @return bool
+	 */
+	public function validate($value) {
+		$p = 0;
+		$expr_macro = new CExpressionMacroParser([
+			'usermacros' => true,
+			'lldmacros' => true,
+			'host_macro_n' => true,
+			'empty_host' => true,
+			'macros_n' => ['{FUNCTION.VALUE}', '{FUNCTION.RECOVERY.VALUE}']
+		]);
+		$expr_func_macro = new CExpressionMacroFunctionParser([
+			'usermacros' => true,
+			'lldmacros' => true,
+			'host_macro_n' => true,
+			'empty_host' => true,
+			'macros_n' => ['{FUNCTION.VALUE}', '{FUNCTION.RECOVERY.VALUE}']
+		]);
+
+		while (isset($value[$p])) {
+			if (substr($value, $p, 3) === '{{?') {
+				if ($expr_func_macro->parse($value, $p) != CParser::PARSE_FAIL) {
+					$p += $expr_func_macro->getLength();
+
+					if (!$this->validateHostnamesInExpression(
+							$expr_func_macro->getExpressionMacroParser()->getExpressionParser())) {
+						return false;
+					}
+
+					continue;
+				}
+				$p++;
+			}
+
+			if (substr($value, $p, 2) === '{?') {
+				if ($expr_macro->parse($value, $p) == CParser::PARSE_FAIL) {
+					$this->setError($expr_macro->getError());
+
+					return false;
+				}
+
+				$p += $expr_macro->getLength();
+
+				if (!$this->validateHostnamesInExpression($expr_macro->getExpressionParser())) {
+					return false;
+				}
+
+				continue;
+			}
+
+			$p++;
+		}
+
+		return true;
+	}
+
+	private function validateHostnamesInExpression(CExpressionParser $expression_parser): bool {
+		if ($this->hostnames === null) {
+			return true;
+		}
+
+		$macro_parser = new CMacroParser(['macros' => ['{HOST.HOST}'], 'ref_type' => CMacroParser::REFERENCE_NUMERIC]);
+		$hosts = $expression_parser->getResult()->getHosts();
+
+		foreach ($hosts as $host) {
+			if ($host !== '' && $macro_parser->parse($host) !== CParser::PARSE_SUCCESS
+					&& !in_array($host, $this->hostnames, true)) {
+				$this->setError($this->message_hostnames === null
+					? _s('host "%1$s" is not allowed in event name', $host)
+					: $this->message_hostnames
+				);
+
+				return false;
+			}
+		}
+
+		return true;
+	}
+}

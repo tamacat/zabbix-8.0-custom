@@ -1,0 +1,47 @@
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+#ifndef ZABBIX_ZBXSERVICE_H
+#define ZABBIX_ZBXSERVICE_H
+
+#include "zbxtypes.h"
+#include "zbxdbhigh.h"
+#include "zbxipcservice.h"
+
+ZBX_PTR_VECTOR_DECL(db_service, zbx_db_service *)
+
+#define ZBX_IPC_SERVICE_SERVICE				"service"
+#define ZBX_IPC_SERVICE_SERVICE_PROBLEMS_TAGS		2
+#define ZBX_IPC_SERVICE_SERVICE_ROOTCAUSE		4
+#define ZBX_IPC_SERVICE_SERVICE_PARENT_LIST		5
+#define ZBX_IPC_SERVICE_RELOAD_CACHE			7
+
+void	zbx_service_flush(zbx_uint32_t code, unsigned char *data, zbx_uint32_t size);
+void	zbx_service_send(zbx_uint32_t code, unsigned char *data, zbx_uint32_t size, zbx_ipc_message_t *response);
+void	zbx_service_send_event_tags(zbx_event_tags_t * const *events, int events_num);
+void	zbx_service_reload_cache(void);
+
+void	zbx_service_serialize_problem_tags(unsigned char **data, size_t *data_alloc, size_t *data_offset,
+		zbx_uint64_t eventid, const zbx_vector_tags_ptr_t *tags);
+void	zbx_service_serialize_id(unsigned char **data, size_t *data_alloc, size_t *data_offset, zbx_uint64_t id);
+void	zbx_service_deserialize_ids(const unsigned char *data, zbx_uint32_t size, zbx_vector_uint64_t *ids);
+void	zbx_service_serialize_rootcause(unsigned char **data, size_t *data_alloc, size_t *data_offset,
+		zbx_uint64_t serviceid, const zbx_vector_uint64_t *eventids);
+void	zbx_service_deserialize_rootcause(const unsigned char *data, zbx_uint32_t size,
+		zbx_vector_db_service_t *services);
+
+zbx_uint32_t	zbx_service_serialize_parentids(unsigned char **data, const zbx_vector_uint64_t *ids);
+void	zbx_service_deserialize_parentids(const unsigned char *data, zbx_vector_uint64_t *ids);
+
+#endif /* ZABBIX_ZBXSERVICE_H */

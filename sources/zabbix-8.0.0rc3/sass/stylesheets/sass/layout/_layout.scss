@@ -1,0 +1,84 @@
+html,
+body {
+	block-size: 100dvh;
+}
+
+body {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	grid-template-rows: auto minmax(0, 1fr);
+	grid-template-areas:
+		"sidebar header"
+		"sidebar content";
+	margin: 0;
+	overflow: hidden;
+
+	> z-split-view {
+		.wrapper {
+			overflow-y: auto;
+			overscroll-behavior-y: contain;
+		}
+
+		.side-drawer {
+			background-color: $ui-bg-color;
+			overflow-y: auto;
+			overscroll-behavior-y: contain;
+			position: sticky;
+			inset-block-start: 0;
+			z-index: 998;
+		}
+	}
+
+	> z-split-view,
+	> .wrapper {
+		grid-area: content;
+
+		overflow: auto;
+	}
+}
+
+header {
+	grid-area: header;
+
+	position: relative;
+	box-sizing: border-box;
+	z-index: 15;
+}
+
+aside {
+	grid-area: sidebar;
+
+	&.is-compact {
+		& ~ header,
+		& ~ z-split-view,
+		& ~ .wrapper {
+			margin-left: 48px;
+		}
+	}
+}
+
+main {
+	box-sizing: border-box;
+	min-inline-size: var(--min-content-size);
+	padding: 10px;
+}
+
+footer {
+	margin-top: auto;
+	min-width: var(--min-content-size);
+}
+
+output {
+	display: block;
+}
+
+.wrapper {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	min-block-size: 0;
+
+	> [class^="msg-"] + [class^="msg-"] {
+		margin-block-start: 0;
+	}
+}

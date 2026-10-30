@@ -1,0 +1,92 @@
+<?php
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+
+/**
+ * Class containing operations with user profile edit form.
+ */
+class CControllerUserProfileEdit extends CControllerUserEditGeneral {
+
+	protected function checkInput(): bool {
+		return true;
+	}
+
+	protected function checkPermissions(): bool {
+		if (CWebUser::isGuest() || !CWebUser::isLoggedIn()) {
+			return false;
+		}
+
+		$users = API::User()->get([
+			'output' => ['username', 'name', 'surname', 'lang', 'theme', 'autologin', 'autologout',
+				'default_maintenance_period', 'refresh', 'rows_per_page', 'url', 'timezone', 'provisioned'
+			],
+			'userids' => CWebUser::$data['userid'],
+			'editable' => true
+		]);
+
+		if (!$users) {
+			return false;
+		}
+
+		$this->user = $users[0];
+
+		return true;
+	}
+
+	/**
+	 * Set user medias if user is at least admin and set messages in data.
+	 */
+	protected function doAction(): void {
+		$usrgrps = API::UserGroup()->get([
+			'output' => ['gui_access'],
+			'userids' => CWebUser::$data['userid']
+		]);
+
+		$redirect_enforce = CWebUser::checkAccess(CRoleHelper::PROFILE_REDIRECT_ENFORCE);
+
+		$data = [
+			'change_password' => 0,
+			'allow_empty_password' => !CControllerUserUpdateGeneral::hasInternalAuth($usrgrps),
+			'current_password' => '',
+			'password1' => '',
+			'password2' => '',
+			'lang' => $this->user['lang'],
+			'timezone' => $this->user['timezone'],
+			'theme' => $this->user['theme'],
+			'autologin' => $this->user['autologin'],
+			'autologout' => $this->user['autologout'],
+			'default_maintenance_period' => $this->user['default_maintenance_period'],
+			'refresh' => $this->user['refresh'],
+			'rows_per_page' => $this->user['rows_per_page'],
+			'url' => $redirect_enforce ? '' : $this->user['url'],
+			'profile_redirect_enforce' => $redirect_enforce,
+			'profile_redirect_url' => CWebUser::checkAccess(CRoleHelper::PROFILE_REDIRECT_URL) ?: '',
+			'userid' => CWebUser::$data['userid'],
+			'username' => $this->user['username'],
+			'name' => $this->user['name'],
+			'surname' => $this->user['surname'],
+			'timezones' => $this->timezones,
+			'internal_auth' => CWebUser::$data['auth_type'] == ZBX_AUTH_INTERNAL,
+			'password_requirements' => $this->getPasswordRequirements(),
+			'readonly' => $this->user['provisioned'] == CUser::PROVISION_STATUS_YES,
+			'js_validation_rules' => (new CFormValidator(CControllerUserProfileUpdate::getValidationRules()))
+				->getRules()
+		];
+
+		$response = new CControllerResponseData($data);
+		$response->setTitle(_('Profile'));
+		$this->setResponse($response);
+	}
+}

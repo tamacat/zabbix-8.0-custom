@@ -1,0 +1,130 @@
+<?php declare(strict_types = 0);
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+
+/**
+ * @var CView $this
+ * @var array $data
+ */
+
+$form = (new CForm())
+	->addItem((new CVar(CSRF_TOKEN_NAME, CCsrfTokenHelper::get('tagfilter')))->removeId())
+	->setId('tag-filter-add-form')
+	->setName('tag-filter-add-form');
+
+// Enable form submitting on Enter.
+$form->addItem((new CSubmitButton())->addClass(ZBX_STYLE_FORM_SUBMIT_HIDDEN));
+
+$form_grid = new CFormGrid();
+
+$new_tag_filter_table = (new CTable())
+	->setId('new-tag-filter-table')
+	->setAttribute('style', 'min-width: '.ZBX_TEXTAREA_FILTER_STANDARD_WIDTH.'px;')
+	->setHeader([_('Tag'), _('Value'), ''])
+	->addRow((new CRow())->addClass('js-tag-filter-row-placeholder'))
+	->addItem(
+		(new CTag('tfoot', true))
+			->addItem(new CCol((new CButtonLink(_('Add')))->addClass('js-add-tag-filter-row')))
+	)
+	->setAttribute('data-field-type', 'set')
+	->setAttribute('data-field-name', 'new_tag_filters');
+
+$form_grid
+	->addItem([
+		(new CLabel(_('Host groups'), 'new_tag_groups__ms'))->setAsteriskMark(),
+		new CFormField(
+			(new CMultiSelect([
+				'name' => 'new_tag_groups[]',
+				'object_name' => 'hostGroup',
+				'data' => $data['host_groups_ms'],
+				'popup' => [
+					'parameters' => [
+						'srctbl' => 'host_groups',
+						'srcfld1' => 'groupid',
+						'dstfrm' => $form->getName(),
+						'dstfld1' => 'new_tag_groups_',
+						'disableids' => array_column($data['host_groups_ms'], 'id')
+					]
+				],
+				'add_post_js' => false
+			]))
+				->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
+				->setAriaRequired()
+		)
+	])
+	->addItem([
+		(new CLabel(_('Tags'), 'tag_filters')),
+		(new CFormField(
+			(new CDiv($new_tag_filter_table))->addClass(ZBX_STYLE_TABLE_FORMS_SEPARATOR)
+		))
+		->setId('tag-list-form-field')
+	]);
+
+$tag_filter_row_template = (new CTemplateTag('tag-filter-row-template'))->addItem([
+	(new CRow([
+		(new CTextAreaFlexible('new_tag_filters[#{rowid}][tag]', '#{tag}'))
+			->setWidth(ZBX_TEXTAREA_FILTER_SMALL_WIDTH)
+			->setMaxlength(DB::getFieldLength('tag_filter', 'tag'))
+			->setAttribute('placeholder', _('tag'))
+			->setErrorContainer('new-tag-filters-#{rowid}-error-container'),
+		(new CTextAreaFlexible('new_tag_filters[#{rowid}][value]', '#{value}'))
+			->setWidth(ZBX_TEXTAREA_FILTER_SMALL_WIDTH)
+			->setMaxlength(DB::getFieldLength('tag_filter', 'value'))
+			->setAttribute('placeholder', _('value'))
+			->setErrorContainer('new-tag-filters-#{rowid}-error-container'),
+		(new CButtonLink(_('Remove')))->addClass('js-remove-table-row')
+	]))->addClass('form_row'),
+	(new CRow([
+		(new CCol((new CDiv())->setId('new-tag-filters-#{rowid}-error-container')))
+			->addClass(ZBX_STYLE_ERROR_CONTAINER)
+			->setColSpan(3)
+	]))->addClass('error-container-row')
+]);
+
+$form_grid->addItem($tag_filter_row_template);
+
+$form
+	->addItem($form_grid)
+	->addItem(
+		(new CScriptTag('
+			window.tag_filter_edit.init('.json_encode([
+				'rules' => $data['js_validation_rules'],
+				'tag_filters' => $data['tag_filters'],
+				'groupid' => $data['groupid'] ?: 0
+			]).');
+		'))->setOnDocumentReady()
+	);
+
+$output = [
+	'header' => $data['title'],
+	'script_inline' =>  getPagePostJs().
+		$this->readJsFile('usergroup.tagfilter.edit.js.php'),
+	'body' => $form->toString(),
+	'buttons' => [
+		[
+			'title' => $data['edit'] == 0 ? _('Add') : _('Update'),
+			'class' => 'js-submit',
+			'keepOpen' => true,
+			'isSubmit' => true
+		]
+	]
+];
+
+if ($data['user']['debug_mode'] == GROUP_DEBUG_MODE_ENABLED) {
+	CProfiler::getInstance()->stop();
+	$output['debug'] = CProfiler::getInstance()->make()->toString();
+}
+
+echo json_encode($output);

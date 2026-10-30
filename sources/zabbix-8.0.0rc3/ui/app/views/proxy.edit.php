@@ -1,0 +1,558 @@
+<?php declare(strict_types = 0);
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+
+/**
+ * @var CView $this
+ * @var array $data
+ */
+
+$form = (new CForm('post'))
+	->addItem((new CVar(CSRF_TOKEN_NAME, CCsrfTokenHelper::get('proxy')))->removeId())
+	->setId('proxy-form')
+	->setName('proxy_form')
+	->addStyle('display: none;')
+	->addItem(getMessages())
+	->addVar('update_psk', '0')
+	->addVar('proxyid', $data['proxyid']);
+
+// Enable form submitting on Enter.
+$form->addItem((new CSubmitButton())->addClass(ZBX_STYLE_FORM_SUBMIT_HIDDEN));
+
+// Proxy tab.
+
+$local_address = (new CTable())
+	->setHeader([_('Address'), _('Port')])
+	->addRow([
+		(new CTextBox('local_address', $data['form']['local_address'], false,
+			DB::getFieldLength('proxy', 'local_address')
+		))
+			->setWidth(336)
+			->setErrorLabel(_('Address'))
+			->setErrorContainer('local-address-port-error-container'),
+		(new CTextBox('local_port', $data['form']['local_port'], false, DB::getFieldLength('proxy', 'local_port')))
+			->setWidth(ZBX_TEXTAREA_INTERFACE_PORT_WIDTH)
+			->setErrorLabel(_('Port'))
+			->setErrorContainer('local-address-port-error-container')
+			->setAriaRequired()
+	])
+	->addRow(
+		(new CCol())
+			->setId('local-address-port-error-container')
+			->addClass(ZBX_STYLE_ERROR_CONTAINER)
+	);
+$interface = (new CTable())
+	->setHeader([_('Address'), _('Port')])
+	->addRow([
+		(new CCol(
+			(new CTextAreaFlexible('address', $data['form']['address']))
+				->setWidth(336)
+				->setMaxlength(DB::getFieldLength('proxy', 'address'))
+				->setErrorLabel(_('Address'))
+				->setErrorContainer('address-port-error-container')
+		))->addClass(ZBX_STYLE_ALIGN_TOP),
+		(new CTextBox('port', $data['form']['port'], false, DB::getFieldLength('proxy', 'port')))
+			->setWidth(ZBX_TEXTAREA_INTERFACE_PORT_WIDTH)
+			->setErrorLabel(_('Port'))
+			->setErrorContainer('address-port-error-container')
+			->setAriaRequired()
+	])->addClass(ZBX_STYLE_ALIGN_TOP)
+	->addRow(
+		(new CCol())
+			->setId('address-port-error-container')
+			->addClass(ZBX_STYLE_ERROR_CONTAINER)
+	);
+
+$proxy_tab = (new CFormGrid())
+	->addItem([
+		(new CLabel(_('Proxy name'), 'name'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextAreaFlexible('name', $data['form']['name']))
+				->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
+				->setMaxlength(DB::getFieldLength('proxy', 'name'))
+				->setAriaRequired()
+				->setAttribute('autofocus', 'autofocus')
+		)
+	])
+	->addItem([
+		new CLabel(_('Proxy group'), 'proxy_groupid_ms'),
+		new CFormField(
+			(new CMultiSelect([
+				'name' => 'proxy_groupid',
+				'object_name' => 'proxy_groups',
+				'multiple' => false,
+				'data' => $data['ms_proxy_group'],
+				'popup' => [
+					'parameters' => [
+						'srctbl' => 'proxy_groups',
+						'srcfld1' => 'proxy_groupid',
+						'srcfld2' => 'name',
+						'dstfrm' => $form->getName(),
+						'dstfld1' => 'proxy_groupid'
+					]
+				]
+			]))->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
+		)
+	])
+	->addItem([
+		(new CLabel(_('Address for active agents')))
+			->addClass('js-local-address')
+			->setAsteriskMark(),
+		(new CFormField(
+			(new CDiv($local_address))->addClass(ZBX_STYLE_TABLE_FORMS_SEPARATOR)
+		))->addClass('js-local-address')
+	])
+	->addItem([
+		new CLabel(_('Proxy mode'), 'operating_mode'),
+		new CFormField(
+			(new CRadioButtonList('operating_mode', $data['form']['operating_mode']))
+				->addValue(_('Active'), PROXY_OPERATING_MODE_ACTIVE)
+				->addValue(_('Passive'), PROXY_OPERATING_MODE_PASSIVE)
+				->setModern(true)
+		)
+	])
+	->addItem([
+		(new CLabel(_('Interface')))
+			->addClass('js-interface')
+			->setAsteriskMark(),
+		(new CFormField(
+			(new CDiv($interface))->addClass(ZBX_STYLE_TABLE_FORMS_SEPARATOR)
+		))->addClass('js-interface')
+	])
+	->addItem([
+		(new CLabel(_('Proxy address'), 'allowed_addresses'))->addClass('js-proxy-address'),
+		(new CFormField(
+			(new CTextAreaFlexible('allowed_addresses', $data['form']['allowed_addresses']))
+				->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
+				->setMaxlength(DB::getFieldLength('proxy', 'allowed_addresses'))
+		))->addClass('js-proxy-address')
+	])
+	->addItem([
+		new CLabel(_('Description'), 'description'),
+		new CFormField(
+			(new CTextArea('description', $data['form']['description']))
+				->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
+				->setMaxlength(DB::getFieldLength('proxy', 'description'))
+		)
+	]);
+
+// Encryption tab.
+
+$encryption_tab = (new CFormGrid())
+	->addItem([
+		new CLabel(_('Connections to proxy'), 'tls_connect'),
+		new CFormField(
+			(new CRadioButtonList('tls_connect', $data['form']['tls_connect']))
+				->addValue(_('No encryption'), HOST_ENCRYPTION_NONE)
+				->addValue(_('PSK'), HOST_ENCRYPTION_PSK)
+				->addValue(_('Certificate'), HOST_ENCRYPTION_CERTIFICATE)
+				->setModern(true)
+		)
+	])
+	->addItem([
+		new CLabel(_('Connections from proxy')),
+		new CFormField(
+			(new CList())
+				->addClass(ZBX_STYLE_LIST_CHECK_RADIO)
+				->addItem(
+					(new CCheckBox('tls_accept_none'))
+						->setLabel(_('No encryption'))
+						->setChecked(($data['form']['tls_accept'] & HOST_ENCRYPTION_NONE) != 0)
+				)
+				->addItem(
+					(new CCheckBox('tls_accept_psk'))
+						->setLabel(_('PSK'))
+						->setChecked(($data['form']['tls_accept'] & HOST_ENCRYPTION_PSK) != 0)
+				)
+				->addItem(
+					(new CCheckBox('tls_accept_certificate'))
+						->setLabel(_('Certificate'))
+						->setChecked(($data['form']['tls_accept'] & HOST_ENCRYPTION_CERTIFICATE) != 0)
+				)
+		)
+	])
+	->addItem([
+		(new CLabel(_('PSK identity'), 'tls_psk_identity'))
+			->addClass('js-tls-psk-identity')
+			->setAsteriskMark(),
+		(new CFormField(
+			(new CTextAreaFlexible('tls_psk_identity', $data['form']['tls_psk_identity']))
+				->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
+				->setMaxlength(DB::getFieldLength('proxy', 'tls_psk_identity'))
+				->setAriaRequired()
+		))->addClass('js-tls-psk-identity')
+	])
+	->addItem([
+		(new CLabel(_('PSK'), 'tls_psk'))
+			->addClass('js-tls-psk')
+			->setAsteriskMark(),
+		(new CFormField(
+			(new CTextAreaFlexible('tls_psk', $data['form']['tls_psk']))
+				->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
+				->setMaxlength(DB::getFieldLength('proxy', 'tls_psk'))
+				->setAriaRequired()
+		))->addClass('js-tls-psk')
+	]);
+
+if ($data['form']['tls_connect'] == HOST_ENCRYPTION_PSK
+		|| ($data['form']['tls_accept'] & HOST_ENCRYPTION_PSK) != 0) {
+	$encryption_tab->addItem([
+		(new CLabel(_('PSK')))
+			->addClass('js-tls-psk-change')
+			->setAsteriskMark(),
+		(new CFormField(
+			(new CSimpleButton(_('Change PSK')))
+				->setId('tls-psk-change')
+				->addClass(ZBX_STYLE_BTN_GREY)
+		))->addClass('js-tls-psk-change')
+	]);
+}
+
+$encryption_tab
+	->addItem([
+		(new CLabel(_('Issuer'), 'tls_issuer'))->addClass('js-tls-issuer'),
+		(new CFormField(
+			(new CTextAreaFlexible('tls_issuer', $data['form']['tls_issuer']))
+				->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
+				->setMaxlength(DB::getFieldLength('hosts', 'tls_issuer'))
+		))->addClass('js-tls-issuer')
+	])
+	->addItem([
+		(new CLabel(_x('Subject', 'encryption certificate'), 'tls_subject'))->addClass('js-tls-subject'),
+		(new CFormField(
+			(new CTextAreaFlexible('tls_subject', $data['form']['tls_subject']))
+				->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
+				->setMaxlength(DB::getFieldLength('hosts', 'tls_subject'))
+		))->addClass('js-tls-subject')
+	]);
+
+// APM tab.
+$apm_tab = (new CFormGrid())
+	->addItem(
+		new CFormField(
+			(new CTag('h4', true, _('Input')))->addClass('input-section-header')
+		)
+	)
+	->addItem([
+		(new CLabel([
+			_('Data collection enabled'),
+			makeHelpIcon(_('To enable OpenTelemetry data collection set up Proxy configuration file first.'))
+		], 'data_collection_status')),
+		new CFormField(
+			(new CCheckBox('data_collection_status'))
+				->setUncheckedValue(PROXY_APM_DATA_COLLECTION_DISABLED)
+				->setChecked($data['form']['data_collection_status'] === PROXY_APM_DATA_COLLECTION_ENABLED),
+		)
+	])
+	->addItem([
+		(new CLabel([_('Max messages per second')], 'quota_mode'))
+			->setAsteriskMark()
+			->addClass('js-apm-quota-mode'),
+		(new CFormField([
+			(new CRadioButtonList('quota_mode', $data['form']['max_messages_per_second'] === 0
+				? PROXY_APM_QUOTA_MODE_UNLIMITED
+				: PROXY_APM_QUOTA_MODE_CUSTOM
+			))
+				->addValue(_('Unlimited'), PROXY_APM_QUOTA_MODE_UNLIMITED)
+				->addValue(_('Custom'), PROXY_APM_QUOTA_MODE_CUSTOM)
+				->setModern(),
+			(new CDiv())
+				->addClass(ZBX_STYLE_FORM_INPUT_MARGIN)
+				->addClass('js-apm-quota-mode-custom'),
+			(new CNumericBox('max_messages_per_second', $data['form']['max_messages_per_second'], 10, false, false,
+					false))
+				->setWidth(ZBX_TEXTAREA_TINY_WIDTH)
+				->addClass('js-apm-quota-mode-custom')
+		]))
+			->addClass('js-apm-quota-mode')
+			->addStyle('height: 24px;')
+	])
+	->addItem(
+		(new CFormField(
+			(new CTag('h4', true, _('Process')))->addClass('input-section-header')
+		))->addClass('js-apm-attributes'),
+	)
+	->addItem([
+		(new CLabel([_('Resource attributes')], 'additional_resource_attributes'))->addClass('js-apm-attributes'),
+		(new CFormField(
+			(new CDiv(new CPartial('apm.attributes', [
+				'attributes' => $data['form']['additional_resource_attributes'],
+				'field_name' => 'additional_resource_attributes',
+				'tabs_id' => 'proxy-tabs',
+				'attr_tab_id' => 'proxy-apm-tab',
+				'has_inline_validation' => true,
+				'signal_types' => [
+					SIGNAL_TYPE_TRACES => _('Traces'),
+					SIGNAL_TYPE_METRICS => _('Metrics'),
+					SIGNAL_TYPE_LOGS => _('Logs')
+				],
+				'default_signal_type' => SIGNAL_TYPE_TRACES
+			])))
+				->addStyle('width: 100%;')
+				->addClass(ZBX_STYLE_TABLE_FORMS_SEPARATOR)
+		))->addClass('js-apm-attributes')
+	]);
+
+// Timeouts tab.
+$custom_timeouts_disabled = $data['form']['custom_timeouts'] == ZBX_PROXY_CUSTOM_TIMEOUTS_DISABLED;
+$version_mismatch_hint = $data['version_mismatch']
+	? new CSpan(makeWarningIcon(_('Timeouts are disabled because the proxy and server versions do not match.')))
+	: null;
+
+$timeouts_tab = (new CFormGrid())
+	->addItem([
+		new CLabel([_('Timeouts for item types'), $version_mismatch_hint], 'custom_timeouts'),
+		new CFormField([
+			(new CRadioButtonList('custom_timeouts', $data['form']['custom_timeouts']))
+				->addValue(_('Global'), ZBX_PROXY_CUSTOM_TIMEOUTS_DISABLED)
+				->addValue(_('Override'), ZBX_PROXY_CUSTOM_TIMEOUTS_ENABLED)
+				->setModern()
+				->setEnabled(!$data['version_mismatch']),
+			$data['user']['can_edit_global_timeouts']
+				? (new CLink(_('Global timeouts'),
+					(new CUrl('zabbix.php'))->setArgument('action', 'timeouts.edit')
+				))
+					->addClass(ZBX_STYLE_LINK)
+					->setTarget('_blank')
+				: null
+		])
+	])
+	->addItem([
+		(new CLabel(_('Zabbix agent'), 'timeout_zabbix_agent'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextBox('timeout_zabbix_agent', $data['form']['timeout_zabbix_agent'], false,
+				DB::getFieldLength('proxy', 'timeout_zabbix_agent')
+			))
+				->setWidth(ZBX_TEXTAREA_SMALL_WIDTH)
+				->setReadonly($custom_timeouts_disabled)
+				->setAriaRequired()
+		)
+	])
+	->addItem([
+		(new CLabel(_('Simple check'), 'timeout_simple_check'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextBox('timeout_simple_check', $data['form']['timeout_simple_check'], false,
+				DB::getFieldLength('proxy', 'timeout_simple_check')
+			))
+				->setWidth(ZBX_TEXTAREA_SMALL_WIDTH)
+				->setReadonly($custom_timeouts_disabled)
+				->setAriaRequired()
+		)
+	])
+	->addItem([
+		(new CLabel(_('SNMP agent'), 'timeout_snmp_agent'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextBox('timeout_snmp_agent', $data['form']['timeout_snmp_agent'], false,
+				DB::getFieldLength('proxy', 'timeout_snmp_agent')
+			))
+				->setWidth(ZBX_TEXTAREA_SMALL_WIDTH)
+				->setReadonly($custom_timeouts_disabled)
+				->setAriaRequired()
+		)
+	])
+	->addItem([
+		(new CLabel(_('External check'), 'timeout_external_check'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextBox('timeout_external_check', $data['form']['timeout_external_check'], false,
+				DB::getFieldLength('proxy', 'timeout_external_check')
+			))
+				->setWidth(ZBX_TEXTAREA_SMALL_WIDTH)
+				->setReadonly($custom_timeouts_disabled)
+				->setAriaRequired()
+		)
+	])
+	->addItem([
+		(new CLabel(_('Database monitor'), 'timeout_db_monitor'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextBox('timeout_db_monitor', $data['form']['timeout_db_monitor'], false,
+				DB::getFieldLength('proxy', 'timeout_db_monitor')
+			))
+				->setWidth(ZBX_TEXTAREA_SMALL_WIDTH)
+				->setReadonly($custom_timeouts_disabled)
+				->setAriaRequired()
+		)
+	])
+	->addItem([
+		(new CLabel(_('HTTP agent'), 'timeout_http_agent'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextBox('timeout_http_agent', $data['form']['timeout_http_agent'], false,
+				DB::getFieldLength('proxy', 'timeout_http_agent')
+			))
+				->setWidth(ZBX_TEXTAREA_SMALL_WIDTH)
+				->setReadonly($custom_timeouts_disabled)
+				->setAriaRequired()
+		)
+	])
+	->addItem([
+		(new CLabel(_('SSH agent'), 'timeout_ssh_agent'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextBox('timeout_ssh_agent', $data['form']['timeout_ssh_agent'], false,
+				DB::getFieldLength('proxy', 'timeout_ssh_agent')
+			))
+				->setWidth(ZBX_TEXTAREA_SMALL_WIDTH)
+				->setReadonly($custom_timeouts_disabled)
+				->setAriaRequired()
+		)
+	])
+	->addItem([
+		(new CLabel(_('TELNET agent'), 'timeout_telnet_agent'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextBox('timeout_telnet_agent', $data['form']['timeout_telnet_agent'], false,
+				DB::getFieldLength('proxy', 'timeout_telnet_agent')
+			))
+				->setWidth(ZBX_TEXTAREA_SMALL_WIDTH)
+				->setReadonly($custom_timeouts_disabled)
+				->setAriaRequired()
+		)
+	])
+	->addItem([
+		(new CLabel(_('Script'), 'timeout_script'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextBox('timeout_script', $data['form']['timeout_script'], false,
+				DB::getFieldLength('proxy', 'timeout_script')
+			))
+				->setWidth(ZBX_TEXTAREA_SMALL_WIDTH)
+				->setReadonly($custom_timeouts_disabled)
+				->setAriaRequired()
+		)
+	])
+	->addItem([
+		(new CLabel(_('Browser'), 'timeout_browser'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextBox('timeout_browser', $data['form']['timeout_browser'], false,
+				DB::getFieldLength('proxy', 'timeout_browser')
+			))
+				->setWidth(ZBX_TEXTAREA_SMALL_WIDTH)
+				->setReadonly($custom_timeouts_disabled)
+				->setAriaRequired()
+		)
+	])
+	->addItem([
+		(new CLabel(_('Telemetry query'), 'timeout_telemetry_query'))->setAsteriskMark(),
+		new CFormField(
+			(new CTextBox('timeout_telemetry_query', $data['form']['timeout_telemetry_query'], false,
+				DB::getFieldLength('proxy', 'timeout_telemetry_query')
+			))
+				->setWidth(ZBX_TEXTAREA_SMALL_WIDTH)
+				->setReadonly($custom_timeouts_disabled)
+				->setAriaRequired()
+		)
+	]);
+
+$tabs = (new CTabView(['id' => 'proxy-tabs']))
+	->setSelected(0)
+	->addTab('proxy-tab', _('Proxy'), $proxy_tab)
+	->addTab('proxy-encryption-tab', _('Encryption'), $encryption_tab, TAB_INDICATOR_PROXY_ENCRYPTION)
+	->addTab('proxy-apm-tab', _('APM'), $apm_tab, TAB_INDICATOR_PROXY_APM)
+	->addTab('proxy-timeouts-tab', _('Timeouts'), $timeouts_tab, TAB_INDICATOR_PROXY_TIMEOUTS);
+
+// Output.
+
+$form
+	->addItem($tabs)
+	->addItem(
+		(new CScriptTag('
+			proxy_edit_popup.init('.json_encode([
+				'rules' => $data['js_validation_rules'],
+				'proxyid' => $data['proxyid'],
+				'warnings' => $data['warnings']
+			]).');
+		'))->setOnDocumentReady()
+	);
+
+if ($data['proxyid'] !== null) {
+	$title = _('Proxy');
+	$buttons = [
+		[
+			'title' => _('Update'),
+			'class' => 'js-update',
+			'keepOpen' => true,
+			'isSubmit' => true,
+			'action' => 'proxy_edit_popup.submit();'
+		],
+		[
+			'title' => _('Refresh configuration'),
+			'confirmation' => _('Refresh configuration of the selected proxy?'),
+			'class' => implode(' ', [ZBX_STYLE_BTN_ALT, 'js-refresh-config']),
+			'keepOpen' => true,
+			'isSubmit' => false,
+			'action' => 'proxy_edit_popup.refreshConfig();'
+		],
+		[
+			'title' => _('Clone'),
+			'class' => implode(' ', [ZBX_STYLE_BTN_ALT, 'js-clone']),
+			'keepOpen' => true,
+			'isSubmit' => false,
+			'action' => 'proxy_edit_popup.clone('.json_encode([
+				'title' => _('New proxy'),
+				'buttons' => [
+					[
+						'title' => _('Add'),
+						'class' => 'js-add',
+						'keepOpen' => true,
+						'isSubmit' => true,
+						'action' => 'proxy_edit_popup.submit();'
+					],
+					[
+						'title' => _('Cancel'),
+						'class' => implode(' ', [ZBX_STYLE_BTN_ALT, 'js-cancel']),
+						'cancel' => true,
+						'action' => ''
+					]
+				],
+				'rules' => $data['js_clone_validation_rules']
+			]).');'
+		],
+		[
+			'title' => _('Delete'),
+			'confirmation' => _('Delete selected proxy?'),
+			'class' => implode(' ', [ZBX_STYLE_BTN_ALT, 'js-delete']),
+			'keepOpen' => true,
+			'isSubmit' => false,
+			'action' => 'proxy_edit_popup.delete();'
+		]
+	];
+}
+else {
+	$title = _('New proxy');
+	$buttons = [
+		[
+			'title' => _('Add'),
+			'class' => 'js-add',
+			'keepOpen' => true,
+			'isSubmit' => true,
+			'action' => 'proxy_edit_popup.submit();'
+		]
+	];
+}
+
+$output = [
+	'header' => $title,
+	'doc_url' => CDocHelper::getUrl(CDocHelper::ADMINISTRATION_PROXY_EDIT),
+	'body' => $form->toString(),
+	'buttons' => $buttons,
+	'script_inline' => getPagePostJs().
+		$this->readJsFile('proxy.edit.js.php'),
+	'dialogue_class' => 'modal-popup-static'
+];
+
+if ($data['user']['debug_mode'] == GROUP_DEBUG_MODE_ENABLED) {
+	CProfiler::getInstance()->stop();
+	$output['debug'] = CProfiler::getInstance()->make()->toString();
+}
+
+$output['data'] = $data;
+
+echo json_encode($output);
