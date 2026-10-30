@@ -3,7 +3,7 @@ Zabbix agent 2 @ZABBIX_VERSION@ for Linux (x86_64) -- custom build @BUILD_DATE@
 
 A standalone zabbix_agent2 built from the Zabbix @ZABBIX_VERSION@ source by the
 tamacat/zabbix-8.0-custom project (https://github.com/tamacat/zabbix-8.0-custom).
-Zabbix 7.0 no longer receives upstream updates; this build is re-built and re-scanned
+It is built from the upstream source as soon as it is tagged and re-built and re-scanned
 by that project. The same agent also ships as the tamacat/zabbix-agent2 container image.
 
 The binary is fully statically linked (musl libc), so it runs on any x86_64 Linux
