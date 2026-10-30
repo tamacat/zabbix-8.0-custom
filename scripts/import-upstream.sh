@@ -26,6 +26,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 ZBX_GIT_URL="${ZBX_GIT_URL:-https://git.zabbix.com/scm/zbx/zabbix.git}"
 ZBX_GIT_MIRROR_URL="${ZBX_GIT_MIRROR_URL:-https://github.com/zabbix/zabbix.git}"
+ZBX_CDN_BASE="${ZBX_CDN_BASE:-https://cdn.zabbix.com/zabbix/sources}"
 ALPINE_VERSION="${ALPINE_VERSION:-3.24}"
 
 fail() {
@@ -62,6 +63,11 @@ fi
 
 "${PY}" -m release_tools.cli zabbix-version --version "${NEW}" >/dev/null \
 	|| fail "'${NEW}' is not a Zabbix 8.0 version"
+
+# curl が無いと「CDNにtarballが無い」と区別できず、黙ってgitのタグへ切り替えてしまうので、先に確かめる。
+for tool in curl tar sha256sum perl git; do
+	command -v "${tool}" >/dev/null 2>&1 || fail "${tool} is required"
+done
 
 CURRENT="$(sed -n 's/^ZABBIX_VERSION=//p' .env.example | head -n 1)"
 [ -n "${CURRENT}" ] || fail ".env.example has no ZABBIX_VERSION="
@@ -100,7 +106,7 @@ fetch_cdn() {
 		PROVENANCE="Source: ${url}
 SHA-256: ${actual} (matches ${url}.sha256)"
 		return 0
-	done < <("${PY}" -m release_tools.cli zabbix-version --version "${NEW}" --cdn-urls)
+	done < <("${PY}" -m release_tools.cli zabbix-version --version "${NEW}" --cdn-urls --cdn-base "${ZBX_CDN_BASE}")
 	rm -f "${TARBALL}" "${TARBALL}.sha256"
 	return 1
 }
@@ -206,7 +212,9 @@ fi
 # --- 4. バージョン表記の置き換え ----------------------------------------------------
 printf '%s\n' "${IMPORT_COMMIT}" > data/upstream-import-ref
 # 8.0.1 が 8.0.10 や 8.0.1rc1 の一部に一致しないよう、前後を区切って置き換える。
-mapfile -t files < <(git grep -l -F "${CURRENT}" -- . ':!sources/' ':!data/sast-baseline/' || true)
+# 例として固定のバージョンを書いているファイル(バージョン判定のテストなど)は、
+# "import-upstream: keep-versions" と書いておけば置き換えない。
+mapfile -t files < <(git grep -l -F "${CURRENT}" -- . ':!sources/' ':!data/sast-baseline/' 	| xargs -r git grep -L -F "import-upstream: keep-versions" -- || true)
 if [ "${#files[@]}" -gt 0 ]; then
 	OLD="${CURRENT}" NEW="${NEW}" perl -pi -e \
 		's/(?<![0-9.])\Q$ENV{OLD}\E(?![0-9]|alpha|beta|rc)/$ENV{NEW}/g' "${files[@]}"

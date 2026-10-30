@@ -58,6 +58,26 @@ jobs:
       - name: Compare the pinned PHP version with the latest release
         run: ./scripts/check-php-version.sh
 
+  zabbix-version:
+    # 公式イメージの更新を待たずに上流のZabbixへ追従するための目印。取り込み済み(.env.example の
+    # ZABBIX_VERSION)より新しい8.0系列のタグ(rc・正式リリース・ポイントリリース)が上流にあれば失敗し、
+    # 取り込みのコマンド(scripts/import-upstream.sh)をログに出す。php-version と同じ理由で定期実行のみ。
+    name: Zabbix upstream version check (scheduled)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install PyYAML
+
+      - name: Compare the imported Zabbix version with the upstream tags
+        run: ./scripts/check-zabbix-version.sh
+
   verify:
     # BuildPipeline → ScanRunner(SCA) → ScanRunner(SAST) →
     # SecretScanner(CI、Git差分+イメージレイヤー) → SBOM生成 →
@@ -112,7 +132,7 @@ jobs:
       # 実行時に最新を取得する。
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version: "1.27"
           cache: false
 
       - name: Install govulncheck

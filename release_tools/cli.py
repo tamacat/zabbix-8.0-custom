@@ -25,7 +25,7 @@ from .imagefile import ImageFileError, extract_image_file
 from .models import COMPONENT_NAMES
 from .registry import VulnerabilityRegistry, VulnerabilityRegistryError
 from .tagging import generate_release_tag, generate_tag, release_asset_prefix, require_self_review_confirmation
-from .zabbix_version import cdn_tarball_urls, parse_supported, upstream_update
+from .zabbix_version import DEFAULT_CDN_BASE, cdn_tarball_urls, parse_supported, upstream_update
 
 DEFAULT_REGISTRY_PATH = "data/vulnerability-registry.yaml"
 
@@ -243,7 +243,7 @@ def cmd_zabbix_version(args: argparse.Namespace) -> int:
             if newer is not None:
                 print(newer)
         elif args.cdn_urls:
-            for url in cdn_tarball_urls(args.version):
+            for url in cdn_tarball_urls(args.version, args.cdn_base):
                 print(url)
         elif args.field == "line":
             print(version.line)
@@ -327,6 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="標準入力の上流タグ名一覧から、--versionより新しい追従先を出力する",
     )
     mode.add_argument("--cdn-urls", action="store_true", help="公式CDN上のソースtarballの候補URLを出力する")
+    p.add_argument("--cdn-base", default=DEFAULT_CDN_BASE, help="--cdn-urls の基準URL(テスト・ミラー用)")
     p.set_defaults(func=cmd_zabbix_version)
 
     p = sub.add_parser("scan-gate", help="スキャン結果を正規化しBR2.1のゲート判定を行う")

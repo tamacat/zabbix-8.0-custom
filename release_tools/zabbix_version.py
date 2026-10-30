@@ -118,7 +118,10 @@ def upstream_update(current: str, candidates: Iterable[str], line: str = SUPPORT
     return None
 
 
-def cdn_tarball_urls(version: str) -> list[str]:
+DEFAULT_CDN_BASE = "https://cdn.zabbix.com/zabbix/sources"
+
+
+def cdn_tarball_urls(version: str, base: str = DEFAULT_CDN_BASE) -> list[str]:
     """公式配布元(cdn.zabbix.com)上の、このバージョンのソースtarballの候補URL。
 
     正式リリースは sources/stable/<line>/、プレリリースは sources/development/<line>/ に置かれる。
@@ -126,7 +129,7 @@ def cdn_tarball_urls(version: str) -> list[str]:
     scripts/import-upstream.sh がタグから `make dist` で同じ形のtarballを作る。
     """
     v = parse_supported(version)
-    base = "https://cdn.zabbix.com/zabbix/sources"
+    base = base.rstrip("/")
     name = f"zabbix-{v}.tar.gz"
     if v.is_prerelease:
         return [f"{base}/development/{v.line}/{name}"]
