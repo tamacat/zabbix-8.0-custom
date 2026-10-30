@@ -12,8 +12,8 @@
 # エラーメッセージを出してここで停止する。
 #
 # 使用する環境変数(.envから読み込み可能。デフォルトは以下の通り):
-#   ZABBIX_SRC_DIR   Zabbixソース配置先(既定: sources/zabbix-7.0.32)
-#   ZABBIX_VERSION   ビルド対象のZabbixバージョン(例: 7.0.32)。必須。
+#   ZABBIX_SRC_DIR   Zabbixソース配置先(既定: sources/zabbix-8.0.0rc3)
+#   ZABBIX_VERSION   ビルド対象のZabbixバージョン(例: 8.0.0rc3)。必須。
 #   ALPINE_VERSION   ビルド用コンテナのAlpineバージョン(既定: 3.24)
 #   BUILD_DATE       アーカイブ名・タグに埋め込むビルド日(既定: 本日、UTC、YYYYMMDD)
 #   DIST_DIR         成果物の書き出し先(既定: dist)
@@ -32,7 +32,7 @@ if [ -f .env ]; then
 	done < <(grep -Ev '^[[:space:]]*(#|$)' .env)
 fi
 
-ZABBIX_SRC_DIR="${ZABBIX_SRC_DIR:-sources/zabbix-7.0.32}"
+ZABBIX_SRC_DIR="${ZABBIX_SRC_DIR:-sources/zabbix-8.0.0rc3}"
 ALPINE_VERSION="${ALPINE_VERSION:-3.24}"
 BUILD_DATE="${BUILD_DATE:-$(date -u +%Y%m%d)}"
 DIST_DIR="${DIST_DIR:-dist}"
@@ -54,7 +54,7 @@ else
 fi
 
 if [ -z "${ZABBIX_VERSION:-}" ]; then
-	fail "ZABBIX_VERSION が設定されていません(.env または環境変数で指定してください。例: ZABBIX_VERSION=7.0.32)"
+	fail "ZABBIX_VERSION が設定されていません(.env または環境変数で指定してください。例: ZABBIX_VERSION=8.0.0rc3)"
 fi
 
 if [ ! -d "${ZABBIX_SRC_DIR}" ]; then

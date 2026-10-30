@@ -4,7 +4,7 @@
 # [FR5.1]。
 #
 # 使用法: scripts/scan-sca.sh <イメージ参照> [追加のtrivy引数...]
-#   例:   scripts/scan-sca.sh tamacat/zabbix-server-mysql:7.0.32-alpine-b20260920
+#   例:   scripts/scan-sca.sh tamacat/zabbix-server-mysql:8.0.0rc3-alpine-b20260920
 #
 # BR6.1: 失敗時(ツール未インストール・イメージ未存在・ゲートFail)は自動リトライを行わない。
 set -euo pipefail

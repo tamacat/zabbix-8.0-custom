@@ -13,7 +13,7 @@ as the official image of that name — it never touches the main MySQL
 database. Zabbix itself stays on the 7.0.x line; only the base images and
 this project's own build/scan/publish tooling are actively maintained.
 
-The Zabbix 7.0 source tree is vendored at `sources/zabbix-7.0.32/` (see
+The Zabbix 7.0 source tree is vendored at `sources/zabbix-8.0.0rc3/` (see
 "Adding the Zabbix source" below for provenance and how to update it to a
 later 7.0.x point release).
 
@@ -55,7 +55,7 @@ scanned, published image. It implements six components:
 ## Adding the Zabbix source
 
 The Dockerfiles and scripts reference `${ZABBIX_SRC_DIR}` (build arg / env
-var, default `sources/zabbix-7.0.32`) as the location of the buildable
+var, default `sources/zabbix-8.0.0rc3`) as the location of the buildable
 Zabbix 7.0 source tree, relative to this directory. It is vendored directly
 (committed, not a nested git submodule), matching the layout already used by
 the sibling `zabbix-5.0-custom` project.
@@ -65,16 +65,16 @@ and its integrity verified against the official SHA-256 checksum before
 extracting:
 
 ```bash
-curl -sSL -o zabbix-7.0.32.tar.gz \
-  https://cdn.zabbix.com/zabbix/sources/stable/7.0/zabbix-7.0.32.tar.gz
-curl -sSL -o zabbix-7.0.32.tar.gz.sha256 \
-  https://cdn.zabbix.com/zabbix/sources/stable/7.0/zabbix-7.0.32.tar.gz.sha256
-sha256sum -c zabbix-7.0.32.tar.gz.sha256   # must print "OK" before extracting
-tar -xzf zabbix-7.0.32.tar.gz -C sources/
+curl -sSL -o zabbix-8.0.0rc3.tar.gz \
+  https://cdn.zabbix.com/zabbix/sources/stable/7.0/zabbix-8.0.0rc3.tar.gz
+curl -sSL -o zabbix-8.0.0rc3.tar.gz.sha256 \
+  https://cdn.zabbix.com/zabbix/sources/stable/7.0/zabbix-8.0.0rc3.tar.gz.sha256
+sha256sum -c zabbix-8.0.0rc3.tar.gz.sha256   # must print "OK" before extracting
+tar -xzf zabbix-8.0.0rc3.tar.gz -C sources/
 ```
 
 To move to a later 7.0.x point release, repeat the same download-and-verify
-steps for the new version, replace `sources/zabbix-7.0.32/` with the new
+steps for the new version, replace `sources/zabbix-8.0.0rc3/` with the new
 tree, commit that unmodified tree on its own, point `data/upstream-import-ref`
 at that commit (the SAST gate diffs against it), regenerate the SAST baseline
 (`./scripts/scan-sast.sh --update-baseline`), and update
@@ -95,7 +95,7 @@ bats tests/scripts                # scripts/ tests (requires bats-core)
 python3 -m release_tools.cli register-cve --cve-id CVE-2026-00001 \
   --component zabbix-server --severity Critical
 python3 -m release_tools.cli generate-tag --component zabbix-server \
-  --zabbix-version 7.0.32 --build-date "$(date -u +%Y%m%d)" --arch amd64
+  --zabbix-version 8.0.0rc3 --build-date "$(date -u +%Y%m%d)" --arch amd64
 ```
 
 Once the Zabbix source is present:
@@ -137,7 +137,7 @@ Tag format: `<zabbix-version>-alpine-b<build-date>`, the same for all four image
 (there are no floating tags such as `latest`), e.g.:
 
 ```bash
-docker pull tamacat/zabbix-server-mysql:7.0.32-alpine-b20260925
+docker pull tamacat/zabbix-server-mysql:8.0.0rc3-alpine-b20260925
 ```
 
 Images are signed with cosign (keyless) and carry a CycloneDX SBOM attestation;
@@ -147,7 +147,7 @@ publishing waits for approval on the `production` GitHub Environment.
 
 `zabbix_agent2` is also published as plain binaries, for hosts where a
 container is not an option. Each [Release](../../releases) (tag
-`agent2-<zabbix-version>-b<build-date>`, e.g. `agent2-7.0.32-b20261017`)
+`agent2-<zabbix-version>-b<build-date>`, e.g. `agent2-8.0.0rc3-b20261017`)
 carries:
 
 | File | Contents |
@@ -167,7 +167,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 cosign verify-blob --bundle SHA256SUMS.sigstore.json \
   --certificate-identity-regexp '^https://github.com/tamacat/zabbix-7.0-custom/.github/workflows/agent2-binaries.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
-tar -xzf zabbix_agent2-7.0.32-b20261017-linux-amd64.tar.gz
+tar -xzf zabbix_agent2-8.0.0rc3-b20261017-linux-amd64.tar.gz
 ```
 
 On Windows, edit `conf\zabbix_agent2.win.conf`, then in an elevated prompt
@@ -280,11 +280,11 @@ three SQL files from the vendored source once, in this order:
 
 ```bash
 mysql -h "$DB_SERVER_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" \
-  < sources/zabbix-7.0.32/database/mysql/schema.sql
+  < sources/zabbix-8.0.0rc3/database/mysql/schema.sql
 mysql -h "$DB_SERVER_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" \
-  < sources/zabbix-7.0.32/database/mysql/images.sql
+  < sources/zabbix-8.0.0rc3/database/mysql/images.sql
 mysql -h "$DB_SERVER_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" \
-  < sources/zabbix-7.0.32/database/mysql/data.sql
+  < sources/zabbix-8.0.0rc3/database/mysql/data.sql
 ```
 
 **The database must exist with `utf8mb4` character set and `utf8mb4_bin`
@@ -411,7 +411,7 @@ the corresponding source is this repository (the Zabbix source under `sources/` 
 the patches applied, plus the build files). Keep it publicly available alongside
 the published images.
 
-## 7.0 build notes (verified against 7.0.32)
+## 7.0 build notes (verified against 8.0.0rc3)
 
 - Builder stages need `linux-headers` (`linux/version.h`, used by `proc.c`); added to server/proxy/agent2.
 - agent2: 7.0 writes the binary to `src/go/bin/zabbix_agent2` (6.0: `src/go/bin` was the file itself).

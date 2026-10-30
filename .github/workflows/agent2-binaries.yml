@@ -22,7 +22,7 @@ on:
       - .github/workflows/agent2-binaries.yml
 
 env:
-  ZABBIX_VERSION: "7.0.32"
+  ZABBIX_VERSION: "8.0.0rc3"
   ALPINE_VERSION: "3.24"
   REGISTRY_PATH: "data/vulnerability-registry.yaml"
 

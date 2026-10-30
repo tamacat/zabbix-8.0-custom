@@ -3,7 +3,7 @@
 # 維持する。
 #
 # 前提: docker/server/Dockerfile 冒頭のコメントと同じ — ${ZABBIX_SRC_DIR}(既定
-# sources/zabbix-7.0.32)にZabbix 7.0ソース(ui/ ディレクトリ)が配置されるまで
+# sources/zabbix-8.0.0rc3)にZabbix 7.0ソース(ui/ ディレクトリ)が配置されるまで
 # `docker build` は実行できない。
 #
 # ビルドコンテキストはこのディレクトリ(zabbix-7.0-custom/)自身(compose.yml参照)。
@@ -86,7 +86,7 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.title="Zabbix web interface (nginx, MySQL)" \
       org.opencontainers.image.source="https://github.com/tamacat/zabbix-7.0-custom"
 
-ARG ZABBIX_SRC_DIR=sources/zabbix-7.0.32
+ARG ZABBIX_SRC_DIR=sources/zabbix-8.0.0rc3
 ARG PHP_PKG=php85
 
 # ベースイメージ(alpine:${ALPINE_VERSION})は取得した時点のスナップショットで、その後にAlpineが

@@ -1,6 +1,6 @@
 # gitleaks: findings triaged as false positives (one exact fingerprint per line).
 #
-# Every entry below is in the unmodified upstream Zabbix 7.0.32 import (the commit named
+# Every entry below is in the unmodified upstream Zabbix 8.0.0rc3 import (the commit named
 # in data/upstream-import-ref); none is in code this project wrote. A fingerprint is
 # <commit>:<file>:<rule>:<line>, so it silences that one finding only: a real secret added
 # to the same file later, or to any other file, is still reported.
@@ -15,18 +15,18 @@
 # 'X-Application-Secret: <UUID>' header value from the same template. That value is a vendor
 # constant identical in all three DB dumps and shipped publicly in every Zabbix release; it is
 # not a credential of this project. (15)
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/mysql/data.sql:generic-api-key:9987
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/mysql/data.sql:generic-api-key:9988
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/mysql/data.sql:generic-api-key:9989
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/mysql/data.sql:generic-api-key:9990
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/mysql/data.sql:generic-api-key:9992
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/postgresql/data.sql:generic-api-key:54694
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/postgresql/data.sql:generic-api-key:54697
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/postgresql/data.sql:generic-api-key:54700
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/postgresql/data.sql:generic-api-key:54703
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/postgresql/data.sql:generic-api-key:54833
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/oracle/data.sql:generic-api-key:40946
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/oracle/data.sql:generic-api-key:40950
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/oracle/data.sql:generic-api-key:40954
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/oracle/data.sql:generic-api-key:40958
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-7.0.32/database/oracle/data.sql:generic-api-key:40970
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:9987
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:9988
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:9989
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:9990
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:9992
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:54694
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:54697
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:54700
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:54703
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:54833
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/oracle/data.sql:generic-api-key:40946
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/oracle/data.sql:generic-api-key:40950
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/oracle/data.sql:generic-api-key:40954
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/oracle/data.sql:generic-api-key:40958
+2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/oracle/data.sql:generic-api-key:40970

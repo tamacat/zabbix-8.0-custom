@@ -1,7 +1,7 @@
 # zabbix-server(監視サーバー本体、C言語)— Alpine Linuxベースのカスタムイメージ [FR1.1][FR3.1]。
 #
 # 前提: この時点ではまだZabbix 7.0ソースがこのディレクトリに配置されていない
-# (将来 ${ZABBIX_SRC_DIR} — 既定 sources/zabbix-7.0.32 — に配置される想定)。そのため本
+# (将来 ${ZABBIX_SRC_DIR} — 既定 sources/zabbix-8.0.0rc3 — に配置される想定)。そのため本
 # Dockerfileは ARG ZABBIX_SRC_DIR を通じてソース配置先を参照するスキャフォールドとして
 # 書かれており、ソース追加前は `docker build` を実行できない。ソース追加後、
 # 実ソースのconfigureオプション名・依存パッケージ名に差異があれば調整が必要になる。
@@ -17,7 +17,7 @@ ARG ALPINE_VERSION=3.24
 
 FROM alpine:${ALPINE_VERSION} AS builder
 
-ARG ZABBIX_SRC_DIR=sources/zabbix-7.0.32
+ARG ZABBIX_SRC_DIR=sources/zabbix-8.0.0rc3
 
 RUN apk add --no-cache \
 		build-base \

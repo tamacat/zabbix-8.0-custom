@@ -96,7 +96,7 @@ def test_normalize_trivy_findings_maps_severity_and_cve_id():
     trivy_output = {
         "Results": [
             {
-                "Target": "tamacat/zabbix-server-mysql:7.0.32-alpine-b20260920",
+                "Target": "tamacat/zabbix-server-mysql:8.0.0rc3-alpine-b20260920",
                 "Vulnerabilities": [
                     {"VulnerabilityID": "CVE-2026-20001", "Severity": "CRITICAL"},
                     {"VulnerabilityID": "CVE-2026-20002", "Severity": "LOW"},

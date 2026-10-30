@@ -26,7 +26,7 @@ INTERNAL_ENC_DIR="${HOME_DIR}/enc_internal"
 NL='
 '
 
-# <公式の環境変数>:<zabbix_proxy.conf のパラメータ>(いずれも 7.0.32 の zabbix_proxy が受け付ける)
+# <公式の環境変数>:<zabbix_proxy.conf のパラメータ>(いずれも 8.0.0rc3 の zabbix_proxy が受け付ける)
 SCALARS="
 ZBX_PROXYMODE:ProxyMode
 ZBX_LISTENIP:ListenIP
