@@ -11,22 +11,16 @@
 # Do not add entries to get a red build green. Add one only after reading the flagged line
 # and confirming it is not a credential, and say why in a comment here.
 
-# Upstream template data (SQL): Acronis item names/keys such as 'get_token', and a fixed
-# 'X-Application-Secret: <UUID>' header value from the same template. That value is a vendor
-# constant identical in all three DB dumps and shipped publicly in every Zabbix release; it is
-# not a credential of this project. (15)
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:9987
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:9988
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:9989
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:9990
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:9992
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:54694
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:54697
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:54700
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:54703
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:54833
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/oracle/data.sql:generic-api-key:40946
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/oracle/data.sql:generic-api-key:40950
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/oracle/data.sql:generic-api-key:40954
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/oracle/data.sql:generic-api-key:40958
-2e78f4b59e65bcea76effdccd710ca7ee3acfe46:sources/zabbix-8.0.0rc3/database/oracle/data.sql:generic-api-key:40970
+# Upstream template data (SQL): a fixed 'X-Application-Secret: <UUID>' header value from the
+# Acronis template. It is a vendor constant identical in both DB dumps and shipped publicly in every
+# Zabbix release (7.0 had the same entries); it is not a credential of this project. (10)
+28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:7773
+28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:7774
+28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:7775
+28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:7776
+28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/mysql/data.sql:generic-api-key:8367
+28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:53309
+28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:53312
+28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:53315
+28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:53318
+28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:72233
