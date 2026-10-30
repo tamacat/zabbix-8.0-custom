@@ -207,3 +207,44 @@ UnsafeUserParameters=1"
 	run_entrypoint ZBX_CLEAR_ENV=false ZBX_HOSTNAME=a
 	grep -qx "ZBX_HOSTNAME" "${TEST_TMPDIR}/agent-env.log"
 }
+
+# --- 8.0 ---------------------------------------------------------------------------------
+
+@test "8.0: プロファイラー(ZBX_ENABLEPROFILER・ZBX_PROFILER*)と ZBX_USERPARAMETERDIR が設定へ書かれる" {
+	run_entrypoint ZBX_ENABLEPROFILER=1 ZBX_PROFILERDIR=/tmp/prof ZBX_PROFILERINTERVAL=600 \
+		ZBX_PROFILERMAXFILESPERPROFILE=3 ZBX_USERPARAMETERDIR=/etc/zabbix/scripts
+	[ "$status" -eq 0 ]
+	conf_has "EnableProfiler=1"
+	conf_has "ProfilerDir=/tmp/prof"
+	conf_has "ProfilerInterval=600"
+	conf_has "ProfilerMaxFilesPerProfile=3"
+	conf_has "UserParameterDir=/etc/zabbix/scripts"
+	[[ "$output" != *"not supported"* ]]
+}
+
+@test "8.0: ZBX_STATUSPORT はステータスポートを有効にしたときだけ使い、既定は31999(公式と同じ)" {
+	run_entrypoint ZBX_ENABLESTATUSPORT=true ZBX_STATUSPORT=32000
+	[ "$status" -eq 0 ]
+	conf_has "StatusPort=32000"
+
+	run_entrypoint ZBX_ENABLESTATUSPORT=true
+	[ "$status" -eq 0 ]
+	conf_has "StatusPort=31999"
+
+	run_entrypoint ZBX_STATUSPORT=32000
+	[ "$status" -eq 0 ]
+	conf_lacks '^StatusPort='
+	[[ "$output" != *"not supported"* ]]
+}
+
+@test "8.0: ZBX_PERSISTENTBUFFERFILE で永続バッファの場所を変えられ、無効のときは無視する" {
+	run_entrypoint ZBX_ENABLEPERSISTENTBUFFER=true ZBX_PERSISTENTBUFFERFILE=/data/agent2.db
+	[ "$status" -eq 0 ]
+	conf_has "EnablePersistentBuffer=1"
+	conf_has "PersistentBufferFile=/data/agent2.db"
+
+	run_entrypoint ZBX_PERSISTENTBUFFERFILE=/data/agent2.db
+	[ "$status" -eq 0 ]
+	conf_has "EnablePersistentBuffer=0"
+	conf_lacks '^PersistentBufferFile='
+}

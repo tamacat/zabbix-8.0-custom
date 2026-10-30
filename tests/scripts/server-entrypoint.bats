@@ -243,6 +243,73 @@ conf_lacks() { ! grep -qE -- "$1" "${CONF}"; }
 	conf_lacks '^(StartAgentPollers|StartHTTPAgentPollers|StartSNMPPollers|StartConnectors|StartBrowserPollers|WebDriverURL|MaxConcurrentChecksPerPoller|EnableGlobalScripts|AllowSoftwareUpdateCheck|Vault)'
 }
 
+@test "8.0で増えた公式の変数(モバイル・ブリッジ・フロントエンドTLS・TLSListen・テレメトリー)が設定へ書かれる" {
+	run_entrypoint MYSQL_PASSWORD=p ZBX_ENABLEMOBILEDEVICES=0 ZBX_BRIDGEADAPTERURL=http://bridge:8080 \
+		ZBX_FRONTENDALLOWEDIP=10.0.0.5 ZBX_TLS_FRONTENDACCEPT=cert ZBX_TLSFRONTENDCERTISSUER="CN=ca" \
+		ZBX_TLSFRONTENDCERTSUBJECT="CN=web" ZBX_TLSLISTEN=required ZBX_STARTTELEMETRYQUERYPOLLERS=2
+	[ "$status" -eq 0 ]
+	conf_has "EnableMobileDevices=0"
+	conf_has "BridgeAdapterURL=http://bridge:8080"
+	conf_has "FrontendAllowedIP=10.0.0.5"
+	conf_has "TLSFrontendAccept=cert"
+	conf_has "TLSFrontendCertIssuer=CN=ca"
+	conf_has "TLSFrontendCertSubject=CN=web"
+	conf_has "TLSListen=required"
+	conf_has "StartTelemetryQueryPollers=2"
+	[[ "$output" != *"not supported"* ]]
+}
+
+@test "8.0: ZBX_HISTORYPROVIDER_<N> / ZBX_TELEMETRYPROVIDER_<N> は番号順にそれぞれ1行の HistoryProvider / TelemetryProvider になる" {
+	run_entrypoint MYSQL_PASSWORD=p \
+		ZBX_HISTORYPROVIDER_10='elasticsearch;value_types="log,text",url=http://es:9200' \
+		ZBX_HISTORYPROVIDER_2='clickhouse;value_types="uint,dbl",url=http://ch:8123,db=zabbix,username=z,password=p' \
+		ZBX_TELEMETRYPROVIDER_0='clickhouse;url=http://ch:8123,db=telemetry'
+	[ "$status" -eq 0 ]
+	conf_has 'HistoryProvider=clickhouse;value_types="uint,dbl",url=http://ch:8123,db=zabbix,username=z,password=p'
+	conf_has 'HistoryProvider=elasticsearch;value_types="log,text",url=http://es:9200'
+	conf_has 'TelemetryProvider=clickhouse;url=http://ch:8123,db=telemetry'
+	# 2 が 10 より先(文字列順ではなく番号順)
+	[ "$(grep -n '^HistoryProvider=clickhouse' "${CONF}" | cut -d: -f1)" -lt "$(grep -n '^HistoryProvider=elasticsearch' "${CONF}" | cut -d: -f1)" ]
+	[[ "$output" != *"not supported"* ]]
+}
+
+@test "8.0: プロバイダーなど8.0の変数は、指定しなければ設定に出ない" {
+	run_entrypoint MYSQL_PASSWORD=p
+	[ "$status" -eq 0 ]
+	conf_lacks '^(HistoryProvider|TelemetryProvider|EnableMobileDevices|BridgeAdapterURL|TLSListen)='
+}
+
+@test "8.0: 公式と同じく、番号の無い ZBX_HISTORYPROVIDER は受け付けず停止する" {
+	run_entrypoint MYSQL_PASSWORD=p ZBX_HISTORYPROVIDER='clickhouse;url=http://ch:8123'
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"ZBX_HISTORYPROVIDER_0"* ]]
+	[ ! -f "${TEST_TMPDIR}/started.log" ]
+}
+
+@test "8.0: JSONの形式・別変数の資格情報・不正な番号には対応しないので、黙って無視せず停止する" {
+	run_entrypoint MYSQL_PASSWORD=p ZBX_HISTORYPROVIDER_0='{"provider":"clickhouse","url":"http://ch:8123"}'
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"JSON form is not supported"* ]]
+	[ ! -f "${TEST_TMPDIR}/started.log" ]
+
+	run_entrypoint MYSQL_PASSWORD=p ZBX_HISTORYPROVIDER_0='clickhouse;url=http://ch:8123' ZBX_HISTORYPROVIDER_0_PASSWORD=x
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"ZBX_HISTORYPROVIDER_0_PASSWORD"* ]]
+
+	run_entrypoint MYSQL_PASSWORD=p ZBX_TELEMETRYPROVIDER_01='clickhouse;url=http://ch:8123'
+	[ "$status" -ne 0 ]
+	[ ! -f "${TEST_TMPDIR}/started.log" ]
+}
+
+@test "Vault(8.0): AppRole の ZBX_VAULTAPPROLEID / ZBX_VAULTAPPSECRETID も設定へ書かれる" {
+	run_entrypoint MYSQL_PASSWORD=p ZBX_VAULT=HashiCorp ZBX_VAULTURL=https://vault:8200 \
+		ZBX_VAULTAPPROLEID=role-1 ZBX_VAULTAPPSECRETID=secret-1
+	[ "$status" -eq 0 ]
+	conf_has "VaultAppRoleID=role-1"
+	conf_has "VaultAppSecretID=secret-1"
+	[[ "$output" != *"not supported"* ]]
+}
+
 @test "ZBX_LOADMODULE はカンマ区切りで、LoadModulePathと各LoadModuleになる" {
 	run_entrypoint MYSQL_PASSWORD=p ZBX_LOADMODULE=a.so,b.so
 	[ "$status" -eq 0 ]
@@ -270,7 +337,8 @@ AllowRoot=1"
 	emitted="$( { sed -n '/^SCALARS="/,/^"$/p' "${REPO_ROOT}/docker/server/entrypoint.sh" | grep -oE ':[A-Za-z0-9]+$' | tr -d ':'; \
 	              sed -n '/^DB_TLS_SCALARS="/,/^"$/p' "${REPO_ROOT}/docker/server/entrypoint.sh" | grep -oE ':[A-Za-z0-9]+$' | tr -d ':'; \
 	              sed -n '/^TLS_FILES="/,/^"$/p' "${REPO_ROOT}/docker/server/entrypoint.sh" | grep -oE '^TLS[A-Za-z]+File'; \
-	              printf '%s\n' DBHost DBPort DBName DBUser DBPassword LogType PidFile SocketDir AlertScriptsPath ExternalScripts ExportDir LoadModule LoadModulePath HANodeName NodeAddress; } | sort -u)"
+	              sed -n '/^VAULT_SCALARS="/,/^"$/p' "${REPO_ROOT}/docker/server/entrypoint.sh" | grep -oE ':[A-Za-z0-9]+$' | tr -d ':'; \
+	              printf '%s\n' DBHost DBPort DBName DBUser DBPassword LogType PidFile SocketDir AlertScriptsPath ExternalScripts ExportDir LoadModule LoadModulePath HANodeName NodeAddress HistoryProvider TelemetryProvider; } | sort -u)"
 	unknown="$(comm -23 <(printf '%s\n' "${emitted}") <(printf '%s\n' "${accepted}"))"
 	[ -z "${unknown}" ] || { echo "8.0.0rc3が受け付けないパラメータ: ${unknown}" >&2; return 1; }
 	[ "$(printf '%s\n' "${emitted}" | wc -l)" -gt 60 ]

@@ -7,7 +7,8 @@
 #
 # 対応するもの: 下のSCALARSの表にあるスカラー値のパラメータ、Hostname/HostnameItem、
 # ZBX_USE_NODE_NAME_AS_DB_NAME、TLSのパラメータ(値そのものでの指定を含む。tls_file参照)、
-# ZBX_LOADMODULE。
+# ZBX_LOADMODULE、Vault(ZBX_VAULT*)、8.0のAPMコレクター(ZBX_STARTAPMCOLLECTOR・ZBX_APM*)と
+# テレメトリーの送り先(ZBX_TELEMETRYPROVIDER_<N>)。
 # 対応しないもの(このイメージがその機能なしでビルドされている、または用のボリュームが無い):
 # Javaゲートウェイ、IPMI、ODBC、SNMPトラップ、SSH、fpingの各変数。それ以外でも、設定された
 # ZBX_* のうち対応していないものは、起動時に警告を出して無視したことを必ず知らせる(例えば
@@ -58,6 +59,11 @@ ZBX_MAXCONCURRENTCHECKSPERPOLLER:MaxConcurrentChecksPerPoller
 ZBX_PROXYBUFFERMODE:ProxyBufferMode
 ZBX_PROXYMEMORYBUFFERSIZE:ProxyMemoryBufferSize
 ZBX_PROXYMEMORYBUFFERAGE:ProxyMemoryBufferAge
+ZBX_ALLOWUNSUPPORTEDDBVERSIONS:AllowUnsupportedDBVersions
+ZBX_STARTTELEMETRYQUERYPOLLERS:StartTelemetryQueryPollers
+ZBX_STARTAPMCOLLECTOR:StartAPMCollector
+ZBX_APMLISTENIP:APMListenIP
+ZBX_APMLISTENPORT:APMListenPort
 ZBX_STARTVMWARECOLLECTORS:StartVMwareCollectors
 ZBX_VMWAREFREQUENCY:VMwareFrequency
 ZBX_VMWAREPERFFREQUENCY:VMwarePerfFrequency
@@ -75,6 +81,7 @@ ZBX_UNAVAILABLEDELAY:UnavailableDelay
 ZBX_UNREACHABLEDELAY:UnreachableDelay
 ZBX_LOGSLOWQUERIES:LogSlowQueries
 ZBX_TLSCONNECT:TLSConnect
+ZBX_TLSLISTEN:TLSListen
 ZBX_TLSACCEPT:TLSAccept
 ZBX_TLSSERVERCERTISSUER:TLSServerCertIssuer
 ZBX_TLSSERVERCERTSUBJECT:TLSServerCertSubject
@@ -94,6 +101,22 @@ TLSCRLFile:ZBX_TLSCRLFILE:ZBX_TLSCRL
 TLSCertFile:ZBX_TLSCERTFILE:ZBX_TLSCERT
 TLSKeyFile:ZBX_TLSKEYFILE:ZBX_TLSKEY
 TLSPSKFile:ZBX_TLSPSKFILE:ZBX_TLSPSK
+APMTLSCAFile:ZBX_APMTLSCAFILE:ZBX_APMTLSCA
+APMTLSCertFile:ZBX_APMTLSCERTFILE:ZBX_APMTLSCERT
+APMTLSKeyFile:ZBX_APMTLSKEYFILE:ZBX_APMTLSKEY
+"
+
+# Vault(秘密のマクロ用。公式と同じく ZBX_VAULT と ZBX_VAULTURL が両方あるときだけ設定へ書く)。SQLite3の
+# ローカルバッファにはDBの認証情報が無いので、VaultDBPath は扱わない。VAULT_TOKEN は zabbix_proxy が
+# 環境変数から直接読む。
+VAULT_SCALARS="
+ZBX_VAULT:Vault
+ZBX_VAULTURL:VaultURL
+ZBX_VAULTPREFIX:VaultPrefix
+ZBX_VAULTTLSCERTFILE:VaultTLSCertFile
+ZBX_VAULTTLSKEYFILE:VaultTLSKeyFile
+ZBX_VAULTAPPROLEID:VaultAppRoleID
+ZBX_VAULTAPPSECRETID:VaultAppSecretID
 "
 
 # <従来の変数名>:<公式の変数名> — 公式の変数が未指定(または空)のときだけ従来の名前を使う。
@@ -149,6 +172,37 @@ tls_file() {
 		esac
 	fi
 	conf_set "$1" "${file}"
+}
+
+# indexed_providers <変数の接頭辞> <パラメータ> — 8.0 のヒストリー/テレメトリーのプロバイダー。公式と同じく
+# <接頭辞>_0, <接頭辞>_1, ... を番号順に1つずつ <パラメータ>= の行にする(例: ZBX_HISTORYPROVIDER_0 →
+# HistoryProvider=)。値はZabbix自身の形式("clickhouse;url=http://...,db=zabbix,username=...")で書く。
+# 公式が受けるJSONの形式と、それに付ける <接頭辞>_<N>_USERNAME / _PASSWORD 等の別変数には対応しない
+# (このイメージはJSONを解釈しない)ので、黙って無視せずに起動を止める。
+indexed_providers() {
+	prefix="$1"
+	if [ -n "$(env_value "${prefix}")" ]; then
+		fail "${prefix} is not supported; use indexed variables such as ${prefix}_0"
+	fi
+	for name in $(zbx_env_names); do
+		case "${name}" in
+			"${prefix}"_*) ;;
+			*) continue ;;
+		esac
+		index="${name#"${prefix}"_}"
+		case "${index}" in
+			0 | [1-9] | [1-9][0-9] | [1-9][0-9][0-9]) ;;
+			*) fail "${name}: only the native form ${prefix}_<N> is supported by this image (credentials in separate variables need the JSON form, which is not supported; put username=/password= in the value)" ;;
+		esac
+	done
+	for index in $(zbx_env_names | grep -E "^${prefix}_[0-9]+$" | sed "s/^${prefix}_//" | sort -n); do
+		value="$(env_value "${prefix}_${index}")"
+		[ -n "${value}" ] || fail "${prefix}_${index} must not be empty"
+		case "${value}" in
+			"{"* | "["* | " {"* | " ["*) fail "${prefix}_${index}: the JSON form is not supported by this image; use the native form, e.g. clickhouse;url=http://clickhouse:8123,db=zabbix" ;;
+		esac
+		conf_set "$2" "${value}"
+	done
 }
 
 for pair in ${ALIASES}; do
@@ -216,6 +270,23 @@ for entry in ${TLS_FILES}; do
 	tls_file "${key}" "${rest%%:*}" "${rest#*:}"
 done
 
+if [ -n "$(env_value ZBX_VAULT)" ] && [ -n "$(env_value ZBX_VAULTURL)" ]; then
+	for pair in ${VAULT_SCALARS}; do
+		conf_set "${pair#*:}" "$(env_value "${pair%%:*}")"
+	done
+else
+	for pair in ${VAULT_SCALARS}; do
+		name="${pair%%:*}"
+		case "${name}" in ZBX_VAULT | ZBX_VAULTURL) continue ;; esac
+		if [ -n "$(env_value "${name}")" ]; then
+			echo "**** WARNING: ${name} is set but ZBX_VAULT and ZBX_VAULTURL are not both set; the Vault settings are ignored." >&2
+		fi
+	done
+fi
+
+# 8.0: APMで受けたテレメトリーの送り先(ClickHouse)。
+indexed_providers ZBX_TELEMETRYPROVIDER TelemetryProvider
+
 if [ -n "$(env_value ZBX_LOADMODULE)" ]; then
 	conf_set LoadModulePath "${HOME_DIR}/modules"
 	old_ifs="${IFS}"
@@ -231,7 +302,7 @@ known=" ZBX_SERVER_HOST ZBX_SERVER_PORT ZBX_HOSTNAME ZBX_HOSTNAMEITEM ZBX_USE_NO
 for pair in ${ALIASES}; do
 	known="${known} ${pair%%:*}"
 done
-for pair in ${SCALARS}; do
+for pair in ${SCALARS} ${VAULT_SCALARS}; do
 	known="${known} ${pair%%:*}"
 done
 for entry in ${TLS_FILES}; do
@@ -239,6 +310,9 @@ for entry in ${TLS_FILES}; do
 	known="${known} ${rest%%:*} ${rest#*:}"
 done
 for name in $(zbx_env_names); do
+	case "${name}" in
+		ZBX_TELEMETRYPROVIDER_*) continue ;;
+	esac
 	case "${known} " in
 		*" ${name} "*) ;;
 		*) echo "**** WARNING: ${name} is set but is not supported by this image; it is ignored." >&2 ;;

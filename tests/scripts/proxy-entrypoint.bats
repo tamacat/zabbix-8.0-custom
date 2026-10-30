@@ -259,8 +259,9 @@ EnableRemoteCommands=1"
 	[ -n "${accepted}" ]
 	# SCALARSの<変数>:<パラメータ>の右側と、TLS_FILESの左端
 	emitted="$( { sed -n '/^SCALARS="/,/^"$/p' "${REPO_ROOT}/docker/proxy/entrypoint.sh" | grep -oE ':[A-Za-z0-9]+$' | tr -d ':'; \
-	              sed -n '/^TLS_FILES="/,/^"$/p' "${REPO_ROOT}/docker/proxy/entrypoint.sh" | grep -oE '^TLS[A-Za-z]+File' ; \
-	              printf '%s\n' ProxyMode Server Hostname HostnameItem DBName LoadModule LoadModulePath LogType PidFile SocketDir ExternalScripts; } | sort -u)"
+	              sed -n '/^TLS_FILES="/,/^"$/p' "${REPO_ROOT}/docker/proxy/entrypoint.sh" | grep -oE '^(APM)?TLS[A-Za-z]+File' ; \
+	              sed -n '/^VAULT_SCALARS="/,/^"$/p' "${REPO_ROOT}/docker/proxy/entrypoint.sh" | grep -oE ':[A-Za-z0-9]+$' | tr -d ':'; \
+	              printf '%s\n' ProxyMode Server Hostname HostnameItem DBName LoadModule LoadModulePath LogType PidFile SocketDir ExternalScripts TelemetryProvider; } | sort -u)"
 	local unknown
 	unknown="$(comm -23 <(printf '%s\n' "${emitted}") <(printf '%s\n' "${accepted}"))"
 	[ -z "${unknown}" ] || { echo "8.0.0rc3が受け付けないパラメータ: ${unknown}" >&2; return 1; }
@@ -352,4 +353,67 @@ EnableRemoteCommands=1"
 	run_entrypoint ZBX_CLEAR_ENV=false ZBX_HOSTNAME=a
 	[ "$status" -eq 0 ]
 	grep -qx "ZBX_HOSTNAME" "${TEST_TMPDIR}/proxy-env.log"
+}
+
+# --- 8.0 ---------------------------------------------------------------------------------
+
+@test "8.0: APMコレクター(ZBX_STARTAPMCOLLECTOR・ZBX_APMLISTEN*)とTLSListen・テレメトリーのポーラーが設定へ書かれる" {
+	run_entrypoint ZBX_STARTAPMCOLLECTOR=1 ZBX_APMLISTENIP=0.0.0.0 ZBX_APMLISTENPORT=4317 \
+		ZBX_TLSLISTEN=required ZBX_STARTTELEMETRYQUERYPOLLERS=2 ZBX_ALLOWUNSUPPORTEDDBVERSIONS=1
+	[ "$status" -eq 0 ]
+	conf_has "StartAPMCollector=1"
+	conf_has "APMListenIP=0.0.0.0"
+	conf_has "APMListenPort=4317"
+	conf_has "TLSListen=required"
+	conf_has "StartTelemetryQueryPollers=2"
+	conf_has "AllowUnsupportedDBVersions=1"
+	[[ "$output" != *"not supported"* ]]
+}
+
+@test "8.0: APMのTLSは、ファイルのパス(相対は enc 内)でも値そのもの(enc_internalへ書き出す)でも渡せる" {
+	run_entrypoint ZBX_APMTLSCAFILE=apm-ca.crt ZBX_APMTLSCERT="-----BEGIN CERTIFICATE-----" ZBX_APMTLSKEYFILE=/certs/apm.key
+	[ "$status" -eq 0 ]
+	conf_has "APMTLSCAFile=${HOME_SB}/enc/apm-ca.crt"
+	conf_has "APMTLSCertFile=${HOME_SB}/enc_internal/APMTLSCertFile"
+	conf_has "APMTLSKeyFile=/certs/apm.key"
+	[ "$(cat "${HOME_SB}/enc_internal/APMTLSCertFile")" = "-----BEGIN CERTIFICATE-----" ]
+}
+
+@test "8.0: APMは、指定しなければ設定に出ない(既定でコレクターを起動しない)" {
+	run_entrypoint
+	[ "$status" -eq 0 ]
+	conf_lacks '^(StartAPMCollector|APMListen|APMTLS|TelemetryProvider|Vault)'
+}
+
+@test "8.0: ZBX_TELEMETRYPROVIDER_<N> は番号順に TelemetryProvider になり、JSONの形式は受け付けない" {
+	run_entrypoint ZBX_TELEMETRYPROVIDER_0='clickhouse;url=http://ch:8123,db=telemetry'
+	[ "$status" -eq 0 ]
+	conf_has 'TelemetryProvider=clickhouse;url=http://ch:8123,db=telemetry'
+	[[ "$output" != *"not supported"* ]]
+
+	run_entrypoint ZBX_TELEMETRYPROVIDER_0='{"provider":"clickhouse"}'
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"JSON form is not supported"* ]]
+}
+
+@test "Vault(8.0): ZBX_VAULT と ZBX_VAULTURL があるときだけ書き、VaultDBPath は扱わない(SQLite3)" {
+	run_entrypoint ZBX_VAULT=HashiCorp ZBX_VAULTURL=https://vault:8200 ZBX_VAULTPREFIX=zbx/ \
+		ZBX_VAULTAPPROLEID=role-1 ZBX_VAULTAPPSECRETID=secret-1
+	[ "$status" -eq 0 ]
+	conf_has "Vault=HashiCorp"
+	conf_has "VaultURL=https://vault:8200"
+	conf_has "VaultPrefix=zbx/"
+	conf_has "VaultAppRoleID=role-1"
+	conf_has "VaultAppSecretID=secret-1"
+	[[ "$output" != *"not supported"* ]]
+
+	run_entrypoint ZBX_VAULTPREFIX=zbx/
+	[ "$status" -eq 0 ]
+	conf_lacks '^Vault'
+	[[ "$output" == *"ZBX_VAULTPREFIX is set but ZBX_VAULT and ZBX_VAULTURL are not both set"* ]]
+
+	run_entrypoint ZBX_VAULT=HashiCorp ZBX_VAULTURL=https://vault:8200 ZBX_VAULTDBPATH=db/zabbix
+	[ "$status" -eq 0 ]
+	conf_lacks '^VaultDBPath'
+	[[ "$output" == *"ZBX_VAULTDBPATH is set but is not supported"* ]]
 }

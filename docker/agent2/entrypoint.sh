@@ -38,6 +38,11 @@ ZBX_PERSISTENTBUFFERPERIOD:PersistentBufferPeriod
 ZBX_PLUGINTIMEOUT:PluginTimeout
 ZBX_UNSAFEUSERPARAMETERS:UnsafeUserParameters
 ZBX_FORCEACTIVECHECKSONSTART:ForceActiveChecksOnStart
+ZBX_USERPARAMETERDIR:UserParameterDir
+ZBX_ENABLEPROFILER:EnableProfiler
+ZBX_PROFILERDIR:ProfilerDir
+ZBX_PROFILERINTERVAL:ProfilerInterval
+ZBX_PROFILERMAXFILESPERPROFILE:ProfilerMaxFilesPerProfile
 ZBX_LOGREMOTECOMMANDS:Plugins.SystemRun.LogRemoteCommands
 ZBX_MAXLINESPERSECOND:Plugins.Log.MaxLinesPerSecond
 ZBX_ALLOWKEY:AllowKey
@@ -152,12 +157,19 @@ conf_set Hostname "$(env_value ZBX_HOSTNAME)"
 # 公式の既定はfalse(0)。true/falseは1/0へ直し、数字はそのまま渡す。
 persistent="$(env_value ZBX_ENABLEPERSISTENTBUFFER | tr '[:upper:]' '[:lower:]')"
 case "${persistent}" in
-	true | 1) conf_set EnablePersistentBuffer 1; conf_set PersistentBufferFile "${HOME_DIR}/buffer/agent2.db" ;;
+	true | 1)
+		conf_set EnablePersistentBuffer 1
+		# 8.0の公式と同じく ZBX_PERSISTENTBUFFERFILE で場所を変えられる(既定はbufferディレクトリ内)。
+		buffer_file="$(env_value ZBX_PERSISTENTBUFFERFILE)"
+		conf_set PersistentBufferFile "${buffer_file:-${HOME_DIR}/buffer/agent2.db}"
+		;;
 	*) conf_set EnablePersistentBuffer 0 ;;
 esac
 
+# 8.0の公式と同じく、ポートは ZBX_STATUSPORT で変えられる(既定31999)。無効のときは ZBX_STATUSPORT を無視する。
 if [ "$(bool_value ZBX_ENABLESTATUSPORT false)" = "true" ]; then
-	conf_set StatusPort 31999
+	status_port="$(env_value ZBX_STATUSPORT)"
+	conf_set StatusPort "${status_port:-31999}"
 fi
 
 for pair in ${SCALARS}; do
@@ -171,7 +183,7 @@ for entry in ${TLS_FILES}; do
 done
 
 # 設定されているのにこのイメージが扱わない変数を、運用者へ知らせる。
-known=" ZBX_SERVER_HOST ZBX_SERVER_PORT ZBX_PASSIVESERVERS ZBX_ACTIVESERVERS ZBX_PASSIVE_ALLOW ZBX_ACTIVE_ALLOW ZBX_HOSTNAME ZBX_ENABLEPERSISTENTBUFFER ZBX_ENABLESTATUSPORT ZBX_CLEAR_ENV"
+known=" ZBX_SERVER_HOST ZBX_SERVER_PORT ZBX_PASSIVESERVERS ZBX_ACTIVESERVERS ZBX_PASSIVE_ALLOW ZBX_ACTIVE_ALLOW ZBX_HOSTNAME ZBX_ENABLEPERSISTENTBUFFER ZBX_PERSISTENTBUFFERFILE ZBX_ENABLESTATUSPORT ZBX_STATUSPORT ZBX_CLEAR_ENV"
 for pair in ${SCALARS}; do
 	known="${known} ${pair%%:*}"
 done

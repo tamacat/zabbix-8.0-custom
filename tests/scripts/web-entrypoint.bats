@@ -277,3 +277,118 @@ evil=1"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"ZBX_AUTH_TYPE is set but is not supported"* ]]
 }
+
+# --- 8.0 ---------------------------------------------------------------------------------
+
+# entrypoint.sh はJSONを php85 で検証する。テストでは php85 の代わりに、同じ判定(配列かオブジェクトか)を
+# python3 で行うスタブを置く。生成したPHPそのものは、ビルドしたイメージで php -l して確かめる。
+php_json_stub() {
+	cat > "${STUB_BIN}/php85" <<'EOF'
+#!/bin/sh
+exec python3 -c 'import json, os, sys
+try:
+    v = json.loads(os.environ.get("JSON_VALUE", ""))
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if isinstance(v, (dict, list)) else 1)'
+EOF
+	chmod +x "${STUB_BIN}/php85"
+}
+
+@test "8.0: ZBX_HISTORYPROVIDERS / ZBX_TELEMETRYPROVIDERS が \$HISTORY_PROVIDERS / \$TELEMETRY_PROVIDERS になる(' は \" と読む)" {
+	php_json_stub
+	run_entrypoint MYSQL_PASSWORD=p \
+		ZBX_HISTORYPROVIDERS="[{'provider':'clickhouse','types':['uint','dbl'],'url':'http://ch:8123','db':'zabbix'}]" \
+		ZBX_TELEMETRYPROVIDERS='{"provider":"clickhouse","url":"http://ch:8123"}'
+	[ "$status" -eq 0 ]
+	grep -qF "\$HISTORY_PROVIDERS = (function () { \$v = json_decode('[{\"provider\":\"clickhouse\",\"types\":[\"uint\",\"dbl\"],\"url\":\"http://ch:8123\",\"db\":\"zabbix\"}]', true);" "${PHPCONF}"
+	grep -qF "\$TELEMETRY_PROVIDERS = (function () { \$v = json_decode('{\"provider\":\"clickhouse\",\"url\":\"http://ch:8123\"}', true); return isset(\$v['provider']) ? [\$v] : \$v; })();" "${PHPCONF}"
+	! grep -q "HISTORY\['url'\]" "${PHPCONF}"
+}
+
+@test "8.0: プロバイダーのJSONが壊れていれば、黙って無視せず停止する" {
+	php_json_stub
+	run_entrypoint MYSQL_PASSWORD=p ZBX_HISTORYPROVIDERS='[{"provider":'
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"ZBX_HISTORYPROVIDERS is not valid JSON"* ]]
+	[ ! -f "${TEST_TMPDIR}/started.log" ]
+}
+
+@test "8.0: ZBX_HISTORYPROVIDERS と 7.0 の ZBX_HISTORYSTORAGEURL は同時に指定できない(フロントエンドが拒否するため)" {
+	php_json_stub
+	run_entrypoint MYSQL_PASSWORD=p ZBX_HISTORYSTORAGEURL=http://es:9200 \
+		ZBX_HISTORYPROVIDERS='[{"provider":"elasticsearch","types":["log"],"url":"http://es:9200"}]'
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"exclusive"* ]]
+}
+
+@test "8.0: 機能フラグ(ZBX_BANNERS_ENABLED 等)と ZBX_MEDIA_TYPE_DENYLIST、ZBX_CERT_STORAGE が書かれる" {
+	php_json_stub
+	run_entrypoint MYSQL_PASSWORD=p ZBX_BANNERS_ENABLED=false ZBX_HTTP_AUTH_ENABLED=yes \
+		ZBX_MODULES_CONFIG_ENABLED=0 ZBX_MEDIA_TYPE_DENYLIST='["script","sms"]' ZBX_CERT_STORAGE=file
+	[ "$status" -eq 0 ]
+	php_has "\$ZBX_FEATURE_FLAGS['banners_enabled'] = false;"
+	php_has "\$ZBX_FEATURE_FLAGS['http_auth_enabled'] = true;"
+	php_has "\$ZBX_FEATURE_FLAGS['modules_config_enabled'] = false;"
+	php_has "\$ZBX_FEATURE_FLAGS['media_type_denylist'] = json_decode('[\"script\",\"sms\"]', true);"
+	php_has "\$SSO['CERT_STORAGE'] = 'file';"
+}
+
+@test "8.0: 機能フラグは指定しなければ書かない(Zabbixの既定=有効)。CERT_STORAGE の既定は database" {
+	run_entrypoint MYSQL_PASSWORD=p
+	[ "$status" -eq 0 ]
+	! grep -q "ZBX_FEATURE_FLAGS\|HISTORY_PROVIDERS\|TELEMETRY_PROVIDERS\|ZBX_SERVER_TLS\|APM_CA" "${PHPCONF}"
+	php_has "\$SSO['CERT_STORAGE'] = 'database';"
+}
+
+@test "8.0: ZBX_ALLOW_HTTP_AUTH と ZBX_HTTP_AUTH_ENABLED は同時に指定できず、ZBX_CERT_STORAGE は database / file のみ" {
+	run_entrypoint MYSQL_PASSWORD=p ZBX_ALLOW_HTTP_AUTH=true ZBX_HTTP_AUTH_ENABLED=true
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"exclusive"* ]]
+
+	run_entrypoint MYSQL_PASSWORD=p ZBX_CERT_STORAGE="file'; phpinfo(); //"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"ZBX_CERT_STORAGE"* ]]
+}
+
+@test "8.0: フロントエンドからサーバーへのTLS(ZBX_SERVER_TLS_*)は、ZBX_SERVER_TLS_ACTIVE が真のときだけ書く" {
+	run_entrypoint MYSQL_PASSWORD=p ZBX_SERVER_TLS_ACTIVE=true ZBX_SERVER_TLS_CAFILE=/certs/ca.crt \
+		ZBX_SERVER_TLS_KEYFILE=/certs/web.key ZBX_SERVER_TLS_CERTFILE=/certs/web.crt \
+		ZBX_SERVER_TLS_CERT_ISSUER="CN=ca" ZBX_SERVER_TLS_CERT_SUBJECT="CN=server"
+	[ "$status" -eq 0 ]
+	php_has "\$ZBX_SERVER_TLS['ACTIVE'] = true;"
+	php_has "\$ZBX_SERVER_TLS['CA_FILE'] = '/certs/ca.crt';"
+	php_has "\$ZBX_SERVER_TLS['KEY_FILE'] = '/certs/web.key';"
+	php_has "\$ZBX_SERVER_TLS['CERT_FILE'] = '/certs/web.crt';"
+	php_has "\$ZBX_SERVER_TLS['CERTIFICATE_ISSUER'] = 'CN=ca';"
+	php_has "\$ZBX_SERVER_TLS['CERTIFICATE_SUBJECT'] = 'CN=server';"
+
+	run_entrypoint MYSQL_PASSWORD=p ZBX_SERVER_TLS_CAFILE=/certs/ca.crt
+	[ "$status" -eq 0 ]
+	! grep -q "ZBX_SERVER_TLS" "${PHPCONF}"
+}
+
+@test "Vault(8.0): AppRole(ZBX_VAULTAPPROLEID + ZBX_VAULTAPPSECRETID)なら VAULT_TOKEN 無しでも Vault を使い、MYSQL_PASSWORD は不要" {
+	run_entrypoint ZBX_VAULT=HashiCorp ZBX_VAULTURL=https://vault:8200 ZBX_VAULTDBPATH=db/zabbix \
+		ZBX_VAULTAPPROLEID=role-1 ZBX_VAULTAPPSECRETID=secret-1
+	[ "$status" -eq 0 ]
+	php_has "\$DB['VAULT_APP_ROLE_ID']   = 'role-1';"
+	php_has "\$DB['VAULT_APP_SECRET_ID'] = 'secret-1';"
+	php_has "\$DB['PASSWORD'] = '';"
+
+	# AppRoleのIDだけ(SecretIDなし)ではVaultを使わず、従来どおりMYSQL_PASSWORDのDB認証になる。
+	run_entrypoint ZBX_VAULT=HashiCorp ZBX_VAULTURL=https://vault:8200 ZBX_VAULTAPPROLEID=role-1
+	[ "$status" -eq 0 ]
+	php_has "\$DB['PASSWORD'] = 'pw';"
+}
+
+@test "8.0: SAML・Vaultの証明書は 8.0 の *FILE 名でも 7.0 の名前でも渡せ、8.0 の名前が優先する" {
+	run_entrypoint MYSQL_PASSWORD=p ZBX_SSO_SP_KEYFILE=/c/sp8.key ZBX_SSO_SP_KEY=/c/sp7.key \
+		ZBX_SSO_IDP_CERT=/c/idp7.crt ZBX_VAULTURL=https://vault:8200 VAULT_TOKEN=t \
+		ZBX_VAULTTLSCERTFILE=/c/v8.crt ZBX_VAULTCERTFILE=/c/v7.crt ZBX_VAULTKEYFILE=/c/v7.key
+	[ "$status" -eq 0 ]
+	php_has "\$SSO['SP_KEY'] = '/c/sp8.key';"
+	php_has "\$SSO['IDP_CERT'] = '/c/idp7.crt';"
+	php_has "\$DB['VAULT_CERT_FILE'] = '/c/v8.crt';"
+	php_has "\$DB['VAULT_KEY_FILE']  = '/c/v7.key';"
+}

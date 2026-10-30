@@ -1,5 +1,5 @@
 #!/bin/sh
-# zabbix-web(nginx + PHP-FPM) エントリポイント [FR3.2]。公式 zabbix/zabbix-web-nginx-mysql 7.0 と
+# zabbix-web(nginx + PHP-FPM) エントリポイント [FR3.2]。公式 zabbix/zabbix-web-nginx-mysql 8.0 と
 # 同じ環境変数から、zabbix.conf.php・PHPの設定・nginxの設定を生成する。
 #
 # 非rootのzabbixユーザーで動くため、書き込む先はDockerfileでzabbixへchownした場所だけ:
@@ -60,10 +60,15 @@ secret_value MYSQL_USER zabbix
 DB_USER="${secret_result}"
 secret_value MYSQL_PASSWORD ""
 DB_PASSWORD="${secret_result}"
-# Vault(VAULT_TOKEN と ZBX_VAULTURL が揃っているとき)は、フロントエンドがDBのユーザー名・パスワードを
-# Vaultから取る。そのときは MYSQL_PASSWORD は要らず、設定ファイルのDBUSER/PASSWORDは空にする(公式と同じ)。
+# Vault(ZBX_VAULTURL と、VAULT_TOKEN または 8.0 の AppRole 認証 ZBX_VAULTAPPROLEID + ZBX_VAULTAPPSECRETID
+# が揃っているとき)は、フロントエンドがDBのユーザー名・パスワードをVaultから取る。そのときは
+# MYSQL_PASSWORD は要らず、設定ファイルのDBUSER/PASSWORDは空にする(公式と同じ)。
 VAULT_ON=false
-if [ -n "${VAULT_TOKEN:-}" ] && [ -n "${ZBX_VAULTURL:-}" ]; then VAULT_ON=true; fi
+if [ -n "${ZBX_VAULTURL:-}" ]; then
+	if [ -n "${VAULT_TOKEN:-}" ] || { [ -n "${ZBX_VAULTAPPROLEID:-}" ] && [ -n "${ZBX_VAULTAPPSECRETID:-}" ]; }; then
+		VAULT_ON=true
+	fi
+fi
 if [ "${VAULT_ON}" = true ]; then DB_USER=""; DB_PASSWORD=""; fi
 [ -n "${DB_PASSWORD}" ] || [ "${VAULT_ON}" = true ] || fail "MYSQL_PASSWORD (or MYSQL_PASSWORD_FILE) is not set. This variable is mandatory for Zabbix web to connect to the database."
 
@@ -88,6 +93,59 @@ DB_ENCRYPTION=false
 if is_true "${ZBX_DB_ENCRYPTION:-}"; then DB_ENCRYPTION=true; fi
 DB_VERIFY=false
 if is_true "${ZBX_DB_VERIFY_HOST:-}"; then DB_VERIFY=true; fi
+
+# PHPの真偽値リテラル。公式と同じく 1/true/on/yes を真、それ以外を偽とする。
+php_bool() {
+	case "$(lower "$1")" in
+		1 | true | on | yes) echo true ;;
+		*) echo false ;;
+	esac
+}
+
+# JSONの値を検証してから、zabbix.conf.php へ json_decode で埋め込む(公式と同じく ' は " と読む)。
+# 公式は解釈できない値を黙って無視するが、ここでは設定ミスに気付けるよう起動を止める。
+# $3 が list なら、オブジェクト1つ({"provider": ...})も1要素の配列として扱う。
+json_php() {
+	_json="$(printf '%s' "$2" | tr "'" '"')"
+	JSON_VALUE="${_json}" php85 -r '$v = json_decode(getenv("JSON_VALUE"), true); exit(is_array($v) ? 0 : 1);' \
+		|| fail "$1 is not valid JSON (an object or an array is expected)."
+	if [ "${3:-}" = list ]; then
+		echo "(function () { \$v = json_decode('$(php_quote "${_json}")', true); return isset(\$v['provider']) ? [\$v] : \$v; })()"
+	else
+		echo "json_decode('$(php_quote "${_json}")', true)"
+	fi
+}
+
+# 8.0 のヒストリー/テレメトリーのプロバイダー(ClickHouse・Elasticsearch)。公式と同じ ZBX_HISTORYPROVIDERS /
+# ZBX_TELEMETRYPROVIDERS(JSONの配列またはオブジェクト1つ)。7.0 の ZBX_HISTORYSTORAGEURL(Elasticsearchのみ)も
+# 引き続き使えるが(フロントエンドが $HISTORY を変換する)、両方は指定できない(フロントエンドが拒否する)。
+if [ -n "${ZBX_HISTORYPROVIDERS:-}" ] && [ -n "${ZBX_HISTORYSTORAGEURL:-}" ]; then
+	fail "ZBX_HISTORYPROVIDERS and ZBX_HISTORYSTORAGEURL are exclusive; set only one (ZBX_HISTORYSTORAGEURL is deprecated in 8.0)."
+fi
+HISTORY_PROVIDERS_PHP=""
+[ -z "${ZBX_HISTORYPROVIDERS:-}" ] || HISTORY_PROVIDERS_PHP="$(json_php ZBX_HISTORYPROVIDERS "${ZBX_HISTORYPROVIDERS}" list)"
+TELEMETRY_PROVIDERS_PHP=""
+[ -z "${ZBX_TELEMETRYPROVIDERS:-}" ] || TELEMETRY_PROVIDERS_PHP="$(json_php ZBX_TELEMETRYPROVIDERS "${ZBX_TELEMETRYPROVIDERS}" list)"
+MEDIA_DENYLIST_PHP=""
+[ -z "${ZBX_MEDIA_TYPE_DENYLIST:-}" ] || MEDIA_DENYLIST_PHP="$(json_php ZBX_MEDIA_TYPE_DENYLIST "${ZBX_MEDIA_TYPE_DENYLIST}")"
+if [ -n "${ZBX_ALLOW_HTTP_AUTH:-}" ] && [ -n "${ZBX_HTTP_AUTH_ENABLED:-}" ]; then
+	fail "ZBX_ALLOW_HTTP_AUTH and ZBX_HTTP_AUTH_ENABLED are exclusive; set only one (ZBX_HTTP_AUTH_ENABLED is the 8.0 name)."
+fi
+case "${ZBX_CERT_STORAGE:-}" in
+	"" | database | file) ;;
+	*) fail "ZBX_CERT_STORAGE must be 'database' or 'file'." ;;
+esac
+
+# 8.0 の公式は SAML・Vault の証明書を *FILE という名前で受ける。7.0 の名前もそのまま使える(8.0の名前が優先)。
+SSO_SP_KEY="${ZBX_SSO_SP_KEYFILE:-${ZBX_SSO_SP_KEY:-}}"
+SSO_SP_CERT="${ZBX_SSO_SP_CERTFILE:-${ZBX_SSO_SP_CERT:-}}"
+SSO_IDP_CERT="${ZBX_SSO_IDP_CERTFILE:-${ZBX_SSO_IDP_CERT:-}}"
+VAULT_CERT="${ZBX_VAULTTLSCERTFILE:-${ZBX_VAULTCERTFILE:-}}"
+VAULT_KEY="${ZBX_VAULTTLSKEYFILE:-${ZBX_VAULTKEYFILE:-}}"
+for _v in SSO_SP_KEY SSO_SP_CERT SSO_IDP_CERT VAULT_CERT VAULT_KEY; do
+	eval "_x=\${${_v}}"
+	single_line "${_v}" "${_x}"
+done
 
 # --- PHP -------------------------------------------------------------------------
 for _v in ZBX_MAXEXECUTIONTIME ZBX_MEMORYLIMIT ZBX_POSTMAXSIZE ZBX_UPLOADMAXFILESIZE ZBX_MAXINPUTTIME ZBX_SESSION_NAME; do
@@ -159,21 +217,28 @@ global \$DB, \$HISTORY, \$SSO;
 
 \$IMAGE_FORMAT_DEFAULT = IMAGE_FORMAT_PNG;
 CONF
-	# Vault(フロントエンドは ZBX_VAULTURL と VAULT_TOKEN が揃ったときだけ使う)。ZBX_VAULT は
-	# HashiCorp か CyberArk、ZBX_VAULTCERTFILE / ZBX_VAULTKEYFILE は証明書・鍵のパス(CyberArk用)、
-	# ZBX_VAULTCACHE は取得した認証情報のキャッシュ(true/false)。
+	# Vault(フロントエンドは ZBX_VAULTURL と、VAULT_TOKEN または AppRole が揃ったときだけ使う)。ZBX_VAULT は
+	# HashiCorp か CyberArk、ZBX_VAULTTLSCERTFILE / ZBX_VAULTTLSKEYFILE(7.0の名前 ZBX_VAULTCERTFILE /
+	# ZBX_VAULTKEYFILE も可)は証明書・鍵のパス(CyberArk用)、ZBX_VAULTCACHE は取得した認証情報の
+	# キャッシュ(true/false)。ZBX_VAULTAPPROLEID / ZBX_VAULTAPPSECRETID は 8.0 の AppRole 認証。
 	if [ -n "${ZBX_VAULTURL:-}" ]; then
 		echo "\$DB['VAULT']         = '$(php_quote "${ZBX_VAULT:-}")';"
 		echo "\$DB['VAULT_URL']     = '$(php_quote "${ZBX_VAULTURL}")';"
 		echo "\$DB['VAULT_PREFIX']  = '$(php_quote "${ZBX_VAULTPREFIX:-}")';"
 		echo "\$DB['VAULT_DB_PATH'] = '$(php_quote "${ZBX_VAULTDBPATH:-}")';"
 		echo "\$DB['VAULT_TOKEN']   = '$(php_quote "${VAULT_TOKEN:-}")';"
-		[ -z "${ZBX_VAULTCERTFILE:-}" ] || echo "\$DB['VAULT_CERT_FILE'] = '$(php_quote "${ZBX_VAULTCERTFILE}")';"
-		[ -z "${ZBX_VAULTKEYFILE:-}" ] || echo "\$DB['VAULT_KEY_FILE']  = '$(php_quote "${ZBX_VAULTKEYFILE}")';"
+		echo "\$DB['VAULT_APP_ROLE_ID']   = '$(php_quote "${ZBX_VAULTAPPROLEID:-}")';"
+		echo "\$DB['VAULT_APP_SECRET_ID'] = '$(php_quote "${ZBX_VAULTAPPSECRETID:-}")';"
+		[ -z "${VAULT_CERT}" ] || echo "\$DB['VAULT_CERT_FILE'] = '$(php_quote "${VAULT_CERT}")';"
+		[ -z "${VAULT_KEY}" ] || echo "\$DB['VAULT_KEY_FILE']  = '$(php_quote "${VAULT_KEY}")';"
 		if is_true "${ZBX_VAULTCACHE:-}"; then
 			echo "\$DB['VAULT_CACHE']    = true;"
 		fi
 	fi
+	[ -z "${HISTORY_PROVIDERS_PHP}" ] || echo "\$HISTORY_PROVIDERS = ${HISTORY_PROVIDERS_PHP};"
+	[ -z "${TELEMETRY_PROVIDERS_PHP}" ] || echo "\$TELEMETRY_PROVIDERS = ${TELEMETRY_PROVIDERS_PHP};"
+	[ -z "${ZBX_APM_CA_LOCATION:-}" ] || echo "\$APM_CA_LOCATION = '$(php_quote "${ZBX_APM_CA_LOCATION}")';"
+	[ -z "${ZBX_APM_CAFILE:-}" ] || echo "\$APM_CA_FILE = '$(php_quote "${ZBX_APM_CAFILE}")';"
 	if [ -n "${ZBX_HISTORYSTORAGEURL:-}" ]; then
 		echo "\$HISTORY['url'] = '$(php_quote "${ZBX_HISTORYSTORAGEURL}")';"
 		if [ -n "${ZBX_HISTORYSTORAGETYPES:-}" ]; then
@@ -182,9 +247,11 @@ CONF
 			echo "\$HISTORY['types'] = ['${_types}'];"
 		fi
 	fi
-	[ -z "${ZBX_SSO_SP_KEY:-}" ] || echo "\$SSO['SP_KEY'] = '$(php_quote "${ZBX_SSO_SP_KEY}")';"
-	[ -z "${ZBX_SSO_SP_CERT:-}" ] || echo "\$SSO['SP_CERT'] = '$(php_quote "${ZBX_SSO_SP_CERT}")';"
-	[ -z "${ZBX_SSO_IDP_CERT:-}" ] || echo "\$SSO['IDP_CERT'] = '$(php_quote "${ZBX_SSO_IDP_CERT}")';"
+	[ -z "${SSO_SP_KEY}" ] || echo "\$SSO['SP_KEY'] = '$(php_quote "${SSO_SP_KEY}")';"
+	[ -z "${SSO_SP_CERT}" ] || echo "\$SSO['SP_CERT'] = '$(php_quote "${SSO_SP_CERT}")';"
+	[ -z "${SSO_IDP_CERT}" ] || echo "\$SSO['IDP_CERT'] = '$(php_quote "${SSO_IDP_CERT}")';"
+	# SAMLの秘密鍵・証明書の保存先(8.0。database〈既定〉か file)。
+	echo "\$SSO['CERT_STORAGE'] = '${ZBX_CERT_STORAGE:-database}';"
 	# SAMLの追加設定(JSON。単一引用符で書かれていても読めるよう、公式と同じく ' を " に直してから解釈する)。
 	# 解釈できない値は無視する(空の配列)。
 	if [ -n "${ZBX_SSO_SETTINGS:-}" ]; then
@@ -192,12 +259,30 @@ CONF
 		echo "\$SSO['SETTINGS'] = json_decode('$(php_quote "${_sso}")', true);"
 		echo "if (!is_array(\$SSO['SETTINGS'])) { \$SSO['SETTINGS'] = []; }"
 	fi
-	# HTTP認証の許可(Zabbixの既定は許可)。公式と同じく 1/true/on/yes を真、それ以外を偽とする。
-	if [ -n "${ZBX_ALLOW_HTTP_AUTH:-}" ]; then
-		case "$(lower "${ZBX_ALLOW_HTTP_AUTH}")" in
-			1 | true | on | yes) echo "\$ALLOW_HTTP_AUTH = true;" ;;
-			*) echo "\$ALLOW_HTTP_AUTH = false;" ;;
-		esac
+	# HTTP認証の許可(Zabbixの既定は許可)。7.0 の ZBX_ALLOW_HTTP_AUTH($ALLOW_HTTP_AUTH)も 8.0 の
+	# ZBX_HTTP_AUTH_ENABLED($ZBX_FEATURE_FLAGS['http_auth_enabled'])も使える(両方は不可。上で確認済み)。
+	[ -z "${ZBX_ALLOW_HTTP_AUTH:-}" ] || echo "\$ALLOW_HTTP_AUTH = $(php_bool "${ZBX_ALLOW_HTTP_AUTH}");"
+	# 8.0 の機能フラグ(未指定ならZabbixの既定=有効)。
+	[ -z "${ZBX_HTTP_AUTH_ENABLED:-}" ] \
+		|| echo "\$ZBX_FEATURE_FLAGS['http_auth_enabled'] = $(php_bool "${ZBX_HTTP_AUTH_ENABLED}");"
+	[ -z "${ZBX_BANNERS_ENABLED:-}" ] \
+		|| echo "\$ZBX_FEATURE_FLAGS['banners_enabled'] = $(php_bool "${ZBX_BANNERS_ENABLED}");"
+	[ -z "${ZBX_MODULES_CONFIG_ENABLED:-}" ] \
+		|| echo "\$ZBX_FEATURE_FLAGS['modules_config_enabled'] = $(php_bool "${ZBX_MODULES_CONFIG_ENABLED}");"
+	[ -z "${MEDIA_DENYLIST_PHP}" ] || echo "\$ZBX_FEATURE_FLAGS['media_type_denylist'] = ${MEDIA_DENYLIST_PHP};"
+	# フロントエンドからサーバーへの接続のTLS(8.0。公式と同じ変数名)。
+	if is_true "${ZBX_SERVER_TLS_ACTIVE:-}" || [ "${ZBX_SERVER_TLS_ACTIVE:-}" = 1 ]; then
+		for _v in ZBX_SERVER_TLS_CAFILE ZBX_SERVER_TLS_KEYFILE ZBX_SERVER_TLS_CERTFILE \
+			ZBX_SERVER_TLS_CERT_ISSUER ZBX_SERVER_TLS_CERT_SUBJECT; do
+			eval "_x=\${${_v}:-}"
+			single_line "${_v}" "${_x}"
+		done
+		echo "\$ZBX_SERVER_TLS['ACTIVE'] = true;"
+		echo "\$ZBX_SERVER_TLS['CA_FILE'] = '$(php_quote "${ZBX_SERVER_TLS_CAFILE:-}")';"
+		echo "\$ZBX_SERVER_TLS['KEY_FILE'] = '$(php_quote "${ZBX_SERVER_TLS_KEYFILE:-}")';"
+		echo "\$ZBX_SERVER_TLS['CERT_FILE'] = '$(php_quote "${ZBX_SERVER_TLS_CERTFILE:-}")';"
+		echo "\$ZBX_SERVER_TLS['CERTIFICATE_ISSUER'] = '$(php_quote "${ZBX_SERVER_TLS_CERT_ISSUER:-}")';"
+		echo "\$ZBX_SERVER_TLS['CERTIFICATE_SUBJECT'] = '$(php_quote "${ZBX_SERVER_TLS_CERT_SUBJECT:-}")';"
 	fi
 } > "${CONFIG_FILE}"
 umask 022

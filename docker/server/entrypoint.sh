@@ -30,6 +30,10 @@ SCALARS="
 ZBX_ALLOWUNSUPPORTEDDBVERSIONS:AllowUnsupportedDBVersions
 ZBX_ALLOWSOFTWAREUPDATECHECK:AllowSoftwareUpdateCheck
 ZBX_ENABLEGLOBALSCRIPTS:EnableGlobalScripts
+ZBX_ENABLEMOBILEDEVICES:EnableMobileDevices
+ZBX_BRIDGEADAPTERURL:BridgeAdapterURL
+ZBX_FRONTENDALLOWEDIP:FrontendAllowedIP
+ZBX_STARTTELEMETRYQUERYPOLLERS:StartTelemetryQueryPollers
 ZBX_MAXCONCURRENTCHECKSPERPOLLER:MaxConcurrentChecksPerPoller
 ZBX_DBTLSCIPHER:DBTLSCipher
 ZBX_DBTLSCIPHER13:DBTLSCipher13
@@ -90,6 +94,10 @@ ZBX_LOGSLOWQUERIES:LogSlowQueries
 ZBX_STARTPROXYPOLLERS:StartProxyPollers
 ZBX_PROXYCONFIGFREQUENCY:ProxyConfigFrequency
 ZBX_PROXYDATAFREQUENCY:ProxyDataFrequency
+ZBX_TLSLISTEN:TLSListen
+ZBX_TLS_FRONTENDACCEPT:TLSFrontendAccept
+ZBX_TLSFRONTENDCERTISSUER:TLSFrontendCertIssuer
+ZBX_TLSFRONTENDCERTSUBJECT:TLSFrontendCertSubject
 ZBX_TLSCIPHERALL:TLSCipherAll
 ZBX_TLSCIPHERALL13:TLSCipherAll13
 ZBX_TLSCIPHERCERT:TLSCipherCert
@@ -117,6 +125,8 @@ ZBX_VAULTDBPATH:VaultDBPath
 ZBX_VAULTPREFIX:VaultPrefix
 ZBX_VAULTTLSCERTFILE:VaultTLSCertFile
 ZBX_VAULTTLSKEYFILE:VaultTLSKeyFile
+ZBX_VAULTAPPROLEID:VaultAppRoleID
+ZBX_VAULTAPPSECRETID:VaultAppSecretID
 "
 
 # DBのTLS(パスはそのまま渡す。公式と同じ)
@@ -202,6 +212,37 @@ auto_name() {
 	esac
 }
 
+# indexed_providers <変数の接頭辞> <パラメータ> — 8.0 のヒストリー/テレメトリーのプロバイダー。公式と同じく
+# <接頭辞>_0, <接頭辞>_1, ... を番号順に1つずつ <パラメータ>= の行にする(例: ZBX_HISTORYPROVIDER_0 →
+# HistoryProvider=)。値はZabbix自身の形式("clickhouse;url=http://...,db=zabbix,username=...")で書く。
+# 公式が受けるJSONの形式と、それに付ける <接頭辞>_<N>_USERNAME / _PASSWORD 等の別変数には対応しない
+# (このイメージはJSONを解釈しない)ので、黙って無視せずに起動を止める。
+indexed_providers() {
+	prefix="$1"
+	if [ -n "$(env_value "${prefix}")" ]; then
+		fail "${prefix} is not supported; use indexed variables such as ${prefix}_0"
+	fi
+	for name in $(zbx_env_names); do
+		case "${name}" in
+			"${prefix}"_*) ;;
+			*) continue ;;
+		esac
+		index="${name#"${prefix}"_}"
+		case "${index}" in
+			0 | [1-9] | [1-9][0-9] | [1-9][0-9][0-9]) ;;
+			*) fail "${name}: only the native form ${prefix}_<N> is supported by this image (credentials in separate variables need the JSON form, which is not supported; put username=/password= in the value)" ;;
+		esac
+	done
+	for index in $(zbx_env_names | grep -E "^${prefix}_[0-9]+$" | sed "s/^${prefix}_//" | sort -n); do
+		value="$(env_value "${prefix}_${index}")"
+		[ -n "${value}" ] || fail "${prefix}_${index} must not be empty"
+		case "${value}" in
+			"{"* | "["* | " {"* | " ["*) fail "${prefix}_${index}: the JSON form is not supported by this image; use the native form, e.g. clickhouse;url=http://clickhouse:8123,db=zabbix" ;;
+		esac
+		conf_set "$2" "${value}"
+	done
+}
+
 : "${DB_SERVER_HOST:=mysql-server}"
 : "${DB_SERVER_PORT:=3306}"
 : "${MYSQL_DATABASE:=zabbix}"
@@ -222,7 +263,7 @@ if [ "${use_vault}" = true ] && [ -n "$(env_value ZBX_VAULTDBPATH)" ]; then
 	vault_db=true
 fi
 if [ "${use_vault}" = false ]; then
-	for name in ZBX_VAULTURL ZBX_VAULTDBPATH ZBX_VAULTPREFIX ZBX_VAULTTLSCERTFILE ZBX_VAULTTLSKEYFILE; do
+	for name in ZBX_VAULTURL ZBX_VAULTDBPATH ZBX_VAULTPREFIX ZBX_VAULTTLSCERTFILE ZBX_VAULTTLSKEYFILE ZBX_VAULTAPPROLEID ZBX_VAULTAPPSECRETID; do
 		if [ -n "$(env_value "${name}")" ]; then
 			echo "**** WARNING: ${name} is set but ZBX_VAULT and ZBX_VAULTURL are not both set; the Vault settings are ignored." >&2
 		fi
@@ -279,6 +320,10 @@ for entry in ${TLS_FILES}; do
 	tls_file "${key}" "${rest%%:*}" "${rest#*:}"
 done
 
+# 8.0: ClickHouse/Elasticsearch のヒストリー、ClickHouse のテレメトリー(APM)。
+indexed_providers ZBX_HISTORYPROVIDER HistoryProvider
+indexed_providers ZBX_TELEMETRYPROVIDER TelemetryProvider
+
 if [ -n "$(env_value ZBX_LOADMODULE)" ]; then
 	conf_set LoadModulePath "${HOME_DIR}/modules"
 	old_ifs="${IFS}"
@@ -320,6 +365,9 @@ for entry in ${TLS_FILES}; do
 	known="${known} ${rest%%:*} ${rest#*:}"
 done
 for name in $(zbx_env_names); do
+	case "${name}" in
+		ZBX_HISTORYPROVIDER_* | ZBX_TELEMETRYPROVIDER_*) continue ;;
+	esac
 	case "${known} " in
 		*" ${name} "*) ;;
 		*) echo "**** WARNING: ${name} is set but is not supported by this image; it is ignored." >&2 ;;
