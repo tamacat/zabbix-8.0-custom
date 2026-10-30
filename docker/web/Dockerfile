@@ -2,17 +2,16 @@
 # [FR1.2][FR3.1]。公式zabbix-web-nginx-mysqlイメージとの環境変数・ボリューム互換性を
 # 維持する。
 #
-# 前提: docker/server/Dockerfile 冒頭のコメントと同じ — ${ZABBIX_SRC_DIR}(既定
-# sources/zabbix-8.0.0rc3)にZabbix 7.0ソース(ui/ ディレクトリ)が配置されるまで
-# `docker build` は実行できない。
+# ソース(ui/ ディレクトリ)の置き場所は docker/server/Dockerfile 冒頭のコメントと同じ
+# (${ZABBIX_SRC_DIR}、既定 sources/zabbix-8.0.0rc3)。
 #
-# ビルドコンテキストはこのディレクトリ(zabbix-7.0-custom/)自身(compose.yml参照)。
+# ビルドコンテキストはこのディレクトリ(zabbix-8.0-custom/)自身(compose.yml参照)。
 # UIは既存アップストリームソースへのパッチ対象であり(トラックA)、本Dockerfileは
 # ビルド/実行環境のみを新規に定義する(トラックB)。
 #
 # PHPはAlpineのパッケージではなく、公式のソースからビルドする。PHPのセキュリティリリース
 # (2026-10-21の認証なしのリモートコード実行2件)に対し、Alpineのphpパッケージが追いつくのを
-# 待たずに修正版を取り込むため。PHP 8.5は公式のZabbix 7.0イメージと同じ系列。有効にする拡張は、
+# 待たずに修正版を取り込むため。PHP 8.5は公式のZabbix 8.0イメージと同じ系列(8.0のUIは8.2以上8.6未満)。有効にする拡張は、
 # Alpineのphp85パッケージと同じ集合に揃えている(下のconfigureと、tests/test_web_php.pyの一覧を参照)。
 
 ARG ALPINE_VERSION=3.24
@@ -38,7 +37,7 @@ RUN apk upgrade --no-cache
 # linux-headers: socketsがカーネルのヘッダー(linux/filter.h)を使う。
 RUN apk add --no-cache \
 		build-base linux-headers autoconf bison re2c pkgconf curl xz \
-		libxml2-dev openssl-dev zlib-dev pcre2-dev oniguruma-dev gettext-dev \
+		libxml2-dev openssl-dev zlib-dev pcre2-dev oniguruma-dev gettext-dev curl-dev \
 		libpng-dev libjpeg-turbo-dev freetype-dev libwebp-dev
 
 WORKDIR /usr/src
@@ -47,9 +46,10 @@ RUN curl -fsSL -o php.tar.xz "https://www.php.net/distributions/php-${PHP_VERSIO
 	&& tar -xJf php.tar.xz --strip-components=1
 
 # --disable-all から、Zabbixが必要とする拡張だけを足す。Alpineのphp85パッケージと
-# 同じ集合(bcmath ctype dom fileinfo filter gd gettext iconv mbstring mysqli mysqlnd openssl session
-# sockets tokenizer xml xmlreader xmlwriter zlib phar)で、curl・ftp・sodium・
-# sqlite3などZabbixが使わない拡張は含めない。拡張は共有ライブラリではなくPHP本体に組み込む。
+# 同じ集合(bcmath ctype curl dom fileinfo filter gd gettext iconv mbstring mysqli mysqlnd openssl session
+# sockets tokenizer xml xmlreader xmlwriter zlib phar)で、ftp・sodium・sqlite3などZabbixが
+# 使わない拡張は含めない。curlは8.0で必要になった(フロントエンドの要件チェックに加わり、ClickHouseの
+# ヒストリーストレージがcurlで問い合わせる。7.0では使わないので外していた)。拡張は共有ライブラリではなくPHP本体に組み込む。
 # OPcacheはPHP 8.5から常にPHP本体へ組み込まれる(configureのフラグもopcache.soも不要)。
 # 配置はAlpineのパッケージに合わせ(/etc/php85、php85・php-fpm85)、entrypoint.shの変更を最小にしている。
 RUN ./configure \
@@ -67,7 +67,7 @@ RUN ./configure \
 		--enable-mysqlnd --with-mysqli=mysqlnd --with-mysql-sock=/run/mysqld/mysqld.sock \
 		--with-openssl --enable-session --enable-sockets --enable-tokenizer \
 		--enable-xml --enable-xmlreader --enable-xmlwriter --with-libxml \
-		--with-zlib --with-external-pcre --enable-phar \
+		--with-zlib --with-external-pcre --enable-phar --with-curl \
 	&& make -j"$(nproc)" \
 	&& make install-cli install-fpm INSTALL_ROOT=/php-root \
 	&& strip /php-root/usr/bin/php85 /php-root/usr/sbin/php-fpm85 \
@@ -84,7 +84,7 @@ FROM alpine:${ALPINE_VERSION}
 
 LABEL org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.title="Zabbix web interface (nginx, MySQL)" \
-      org.opencontainers.image.source="https://github.com/tamacat/zabbix-7.0-custom"
+      org.opencontainers.image.source="https://github.com/tamacat/zabbix-8.0-custom"
 
 ARG ZABBIX_SRC_DIR=sources/zabbix-8.0.0rc3
 ARG PHP_PKG=php85
@@ -101,7 +101,7 @@ RUN apk upgrade --no-cache
 RUN apk add --no-cache \
 		font-ipa \
 		nginx \
-		libxml2 libssl3 libcrypto3 zlib pcre2 oniguruma gettext-libs \
+		libxml2 libssl3 libcrypto3 zlib pcre2 oniguruma gettext-libs libcurl \
 		libpng libjpeg-turbo freetype libwebp libgcc \
 		tzdata
 
@@ -125,7 +125,7 @@ COPY docker/web/conf/zabbix.ini /etc/${PHP_PKG}/conf.d/99-zabbix.ini
 # lddの結果に出ないlibgcc_s.so.1(スタックトレース用)も使うので、実際に起動するphp -mまで確認する)。あわせて、
 # mysqliとOPcacheが組み込まれていること、php-fpmの設定が読めることを確認する。
 RUN ! ldd /usr/bin/php85 /usr/sbin/php-fpm85 | grep -i "not found" \
-	&& php85 -m | grep -qx mysqli && php85 -m | grep -qx "Zend OPcache" && php-fpm85 -t
+	&& php85 -m | grep -qx mysqli && php85 -m | grep -qx curl && php85 -m | grep -qx "Zend OPcache" && php-fpm85 -t
 
 # ui/conf/zabbix.conf.php はソースに存在しない(.exampleのみ) — entrypoint.shが
 # 環境変数からコンテナ起動時に生成するため、イメージには焼き込まない。

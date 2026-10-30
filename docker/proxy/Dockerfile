@@ -1,11 +1,14 @@
 # zabbix-proxy(プロキシ、C言語)— Alpine Linuxベースのカスタムイメージ [FR1.4][FR3.1]。
 #
-# 前提: docker/server/Dockerfile 冒頭のコメントと同じ — ${ZABBIX_SRC_DIR}(既定
-# sources/zabbix-8.0.0rc3)にZabbix 7.0ソースが配置されるまで `docker build` は実行できない。
+# ソースの置き場所は docker/server/Dockerfile 冒頭のコメントと同じ(${ZABBIX_SRC_DIR}、既定
+# sources/zabbix-8.0.0rc3)。
 #
-# docker/server/Dockerfile と同じ構造だが、--with-mysql の代わりに --with-sqlite3 を
-# 指定する点のみが意図的な差分(BR5.1: zabbix-proxyのローカルバッファに限り
-# SQLite3を例外として許容する)。
+# docker/server/Dockerfile と同じ構造で、意図的な差分は次の2つ:
+# - --with-mysql の代わりに --with-sqlite3(BR5.1: zabbix-proxyのローカルバッファに限り
+#   SQLite3を例外として許容する)。
+# - --with-apm(8.0の新機能。OTLP/gRPCでAPMのテレメトリを受けるコレクター。プロキシ専用)。公式の
+#   zabbix/zabbix-proxy-sqlite3 8.0 と同じく組み込む。既定では起動しない(StartAPMCollector=0)。
+#   gRPC/protobuf(C++)の実行時ライブラリが増えるが、どれもAlpineのパッケージなのでTrivyが見る。
 
 ARG ALPINE_VERSION=3.24
 
@@ -17,7 +20,11 @@ RUN apk add --no-cache \
 		build-base \
 		linux-headers \
 		pkgconf \
-		pcre-dev \
+		pcre2-dev \
+		c-ares-dev \
+		protobuf-dev \
+		grpc-dev \
+		grpc-plugins \
 		sqlite-dev \
 		openssl-dev \
 		libevent-dev \
@@ -45,13 +52,16 @@ RUN sh ./configure \
 		--with-libcurl \
 		--with-libxml2 \
 		--with-openssl \
+		--with-libpcre2 \
+		--with-ares \
+		--with-apm \
 	&& make -j"$(nproc)"
 
 FROM alpine:${ALPINE_VERSION}
 
 LABEL org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.title="Zabbix proxy (SQLite3)" \
-      org.opencontainers.image.source="https://github.com/tamacat/zabbix-7.0-custom"
+      org.opencontainers.image.source="https://github.com/tamacat/zabbix-8.0-custom"
 
 # ベースイメージ(alpine:${ALPINE_VERSION})は取得した時点のスナップショットで、その後にAlpineが
 # 公開した修正がまだ入っていないことがある(zlib 1.3.2-r0のCVE-2026-85091は、リポジトリに
@@ -62,7 +72,11 @@ RUN apk upgrade --no-cache
 
 RUN apk add --no-cache \
 		sqlite-libs \
-		pcre \
+		pcre2 \
+		c-ares \
+		libprotobuf \
+		grpc-cpp \
+		libstdc++ \
 		openssl \
 		libevent \
 		zlib \

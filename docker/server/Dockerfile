@@ -1,12 +1,9 @@
 # zabbix-server(監視サーバー本体、C言語)— Alpine Linuxベースのカスタムイメージ [FR1.1][FR3.1]。
 #
-# 前提: この時点ではまだZabbix 7.0ソースがこのディレクトリに配置されていない
-# (将来 ${ZABBIX_SRC_DIR} — 既定 sources/zabbix-8.0.0rc3 — に配置される想定)。そのため本
-# Dockerfileは ARG ZABBIX_SRC_DIR を通じてソース配置先を参照するスキャフォールドとして
-# 書かれており、ソース追加前は `docker build` を実行できない。ソース追加後、
-# 実ソースのconfigureオプション名・依存パッケージ名に差異があれば調整が必要になる。
+# ソースは ${ZABBIX_SRC_DIR}(既定 sources/zabbix-8.0.0rc3。scripts/import-upstream.sh が
+# 取り込み、バージョンを上げるとこの既定値も書き換える)から取る。
 #
-# ビルドコンテキストはこのディレクトリ(zabbix-7.0-custom/)自身(compose.yml参照)。
+# ビルドコンテキストはこのディレクトリ(zabbix-8.0-custom/)自身(compose.yml参照)。
 # マルチステージビルドで、ビルド専用ステージでコンパイルし、最終イメージには
 # ビルド済みバイナリと実行時共有ライブラリのみを含める(zabbix-5.0の前例
 # docker/server/Dockerfile を踏襲)。
@@ -23,7 +20,8 @@ RUN apk add --no-cache \
 		build-base \
 		linux-headers \
 		pkgconf \
-		pcre-dev \
+		pcre2-dev \
+		c-ares-dev \
 		mariadb-connector-c-dev \
 		openssl-dev \
 		libevent-dev \
@@ -47,6 +45,8 @@ RUN find . -exec touch -d '2000-01-01 00:00:00' {} +
 # --with-mysql: BR5.1(zabbix-serverはMySQLのみ)。net-snmp/libcurl/libxml2/opensslは
 # 公式zabbix/zabbix-server-mysqlイメージが持つ任意統合(SNMP監視・Web監視・XML/TLS)を
 # 維持し、公式イメージとの環境変数・ボリューム互換性を保つために含める。
+# --with-libpcre2: 8.0はPCRE2が必須(旧PCREには対応しない)。--with-ares: c-aresで非同期DNS解決を
+# 行う(公式8.0イメージと同じ。無いとエージェント・HTTPポーリングの名前解決が同期になる)。
 # --disable-dependency-tracking: レイヤー抽出時のタイムスタンプ変化でautomakeの
 # 依存関係追跡が壊れる既知のautotools問題を避ける(1回限りのイメージビルドに
 # インクリメンタルビルドは不要なため実害はない)。
@@ -59,13 +59,15 @@ RUN sh ./configure \
 		--with-libcurl \
 		--with-libxml2 \
 		--with-openssl \
+		--with-libpcre2 \
+		--with-ares \
 	&& make -j"$(nproc)"
 
 FROM alpine:${ALPINE_VERSION}
 
 LABEL org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.title="Zabbix server (MySQL)" \
-      org.opencontainers.image.source="https://github.com/tamacat/zabbix-7.0-custom"
+      org.opencontainers.image.source="https://github.com/tamacat/zabbix-8.0-custom"
 
 # ベースイメージ(alpine:${ALPINE_VERSION})は取得した時点のスナップショットで、その後にAlpineが
 # 公開した修正がまだ入っていないことがある(zlib 1.3.2-r0のCVE-2026-85091は、リポジトリに
@@ -76,7 +78,8 @@ RUN apk upgrade --no-cache
 
 RUN apk add --no-cache \
 		mariadb-connector-c \
-		pcre \
+		pcre2 \
+		c-ares \
 		openssl \
 		libevent \
 		zlib \

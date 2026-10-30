@@ -23,6 +23,8 @@ FPM_POOL = REPO_ROOT / "docker" / "web" / "conf" / "php-fpm-www.conf"
 EXPECTED_MODULES = {
     "bcmath": "--enable-bcmath",
     "ctype": "--enable-ctype",
+    # 8.0で必要になった(フロントエンドの要件チェックとClickHouseのヒストリーストレージ)。
+    "curl": "--with-curl",
     "dom": "--enable-dom",
     "fileinfo": "--enable-fileinfo",
     "filter": "--enable-filter",
@@ -46,7 +48,7 @@ EXPECTED_MODULES = {
 
 # Zabbixが使わず、含めると攻撃面と依存ライブラリが増えるだけの拡張。
 UNWANTED_FLAGS = [
-    "--with-curl", "--enable-ftp", "--with-sodium", "--with-sqlite3", "--with-pdo", "--enable-pdo",
+    "--enable-ftp", "--with-sodium", "--with-sqlite3", "--with-pdo", "--enable-pdo",
     "--enable-posix", "--enable-simplexml", "--enable-soap", "--enable-intl", "--with-ldap", "--with-zip",
     "--with-gmp", "--enable-pcntl", "--enable-exif", "--with-bz2",
 ]
@@ -54,6 +56,7 @@ UNWANTED_FLAGS = [
 # ビルド側の-dev と、それに対応する実行用イメージのパッケージ。
 RUNTIME_FOR_DEV = {
     "libxml2-dev": "libxml2",
+    "curl-dev": "libcurl",
     "openssl-dev": "libssl3",
     "zlib-dev": "zlib",
     "pcre2-dev": "pcre2",

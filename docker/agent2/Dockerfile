@@ -16,7 +16,7 @@ FROM alpine:${ALPINE_VERSION} AS builder
 
 ARG ZABBIX_SRC_DIR=sources/zabbix-8.0.0rc3
 
-RUN apk add --no-cache go build-base linux-headers git autoconf automake libtool pcre-dev openssl-dev zlib-dev
+RUN apk add --no-cache go build-base linux-headers git autoconf automake libtool pcre2-dev openssl-dev zlib-dev
 
 # agent2のバイナリにはGo標準ライブラリがそのまま組み込まれる。Alpineの`go`パッケージは
 # 公式のパッチリリースより遅れて届き(go1.26.8のまま、1.26.9に修正されたnet/http・
@@ -24,7 +24,7 @@ RUN apk add --no-cache go build-base linux-headers git autoconf automake libtool
 # 修正版のツールチェーンを`go`が自動取得して(チェックサムDBで検証される)ビルドに使う。
 # 固定なので、Goの新しいパッチリリースが出たらここを上げる。agent2のSCAゲート(scan-go-vuln.sh、
 # govulncheck)が、古いままだと失敗して知らせる。Alpineの`go`が追いついたら、この指定は外してよい。
-ENV GOTOOLCHAIN=go1.26.10
+ENV GOTOOLCHAIN=go1.27.3
 
 WORKDIR /build
 COPY ${ZABBIX_SRC_DIR}/ /build/
@@ -58,7 +58,7 @@ FROM alpine:${ALPINE_VERSION}
 
 LABEL org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.title="Zabbix agent 2" \
-      org.opencontainers.image.source="https://github.com/tamacat/zabbix-7.0-custom"
+      org.opencontainers.image.source="https://github.com/tamacat/zabbix-8.0-custom"
 
 # ベースイメージ(alpine:${ALPINE_VERSION})は取得した時点のスナップショットで、その後にAlpineが
 # 公開した修正がまだ入っていないことがある(zlib 1.3.2-r0のCVE-2026-85091は、リポジトリに
@@ -67,7 +67,7 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0-only" \
 # hadolint ignore=DL3017
 RUN apk upgrade --no-cache
 
-RUN apk add --no-cache ca-certificates tzdata openssl libcrypto3 zlib pcre
+RUN apk add --no-cache ca-certificates tzdata openssl libcrypto3 zlib pcre2
 
 RUN addgroup -g 1997 -S zabbix \
 	&& adduser -D -S -H -u 1997 -G zabbix -s /sbin/nologin zabbix
