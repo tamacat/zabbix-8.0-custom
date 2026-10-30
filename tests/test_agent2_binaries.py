@@ -97,12 +97,24 @@ def test_windows_script_builds_the_objects_the_upstream_makefile_builds():
 
 
 @needs_upstream
-def test_every_object_the_go_code_links_is_built_by_the_windows_script():
-    linked = set(re.findall(r"build/mingw/output/(\w+)\.o", _text(UPSTREAM_CGO_WINDOWS)))
-    built = set(_script_objects())
+def test_the_objects_reach_the_go_link_the_same_way_as_upstream():
+    """8.0: upstream archives $(OBJS) into libagent.a and appends it to CGO_LDFLAGS (7.0 listed each .o
+    in globals_windows.go). The script must archive every object it compiles and pass the archive."""
+    makefile = _text(UPSTREAM_MINGW_MAKEFILE)
+    script = _text(WINDOWS_SCRIPT)
 
-    assert linked, "could not read the linked objects from globals_windows.go"
-    assert linked <= built, f"linked but not built: {sorted(linked - built)}"
+    assert re.search(r"^\$\(OUTPUTDIR\)\\libagent\.a: \$\(OBJS\)$", makefile, re.MULTILINE), (
+        "upstream no longer builds libagent.a from $(OBJS); re-check how the objects are linked"
+    )
+    assert r"set CGO_LDFLAGS=$(CGO_LDFLAGS) $(OUTPUTDIR)\libagent.a" in makefile
+    # If upstream went back to naming objects in the cgo directives, they would have to be built too.
+    linked = set(re.findall(r"build/mingw/output/(\w+)\.o", _text(UPSTREAM_CGO_WINDOWS)))
+    assert linked <= set(_script_objects()), f"linked but not built: {sorted(linked - set(_script_objects()))}"
+
+    assert 'ar rcs "${OBJ_DIR}/libagent.a" "${OBJ_DIR}"/*.o' in script
+    last_compile = max(m.start() for m in re.finditer(r"^compile ", script, re.MULTILINE))
+    assert script.index("ar rcs") > last_compile, "archive after the last object is compiled"
+    assert re.search(r'CGO_LDFLAGS="[^"]*\$\{OBJ_DIR\}/libagent\.a"', script)
 
 
 @needs_upstream

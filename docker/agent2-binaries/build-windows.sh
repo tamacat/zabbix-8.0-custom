@@ -91,11 +91,6 @@ compile jsonpath libs/zbxjson/jsonpath.c -DWITH_COMMON_METRICS
 compile jsonobj libs/zbxjson/jsonobj.c -DWITH_COMMON_METRICS
 compile sha256crypt libs/zbxhash/sha256crypt.c -DWITH_COMMON_METRICS
 compile variant libs/zbxvariant/variant.c -DWITH_COMMON_METRICS
-compile sysinfo_system libs/zbxsysinfo/common/system.c
-compile sysinfo_dns libs/zbxsysinfo/common/dns.c
-compile sysinfo_ip_reverse libs/zbxsysinfo/common/ip_reverse.c
-compile sysinfo_vfs_file libs/zbxsysinfo/common/vfs_file.c
-compile sysinfo_dir libs/zbxsysinfo/common/dir.c
 compile sysinfo_alias libs/zbxsysinfo/alias/alias.c
 compile eventlog zabbix_agent/active_checks/eventlog_win32/eventlog.c
 compile process_eventslog zabbix_agent/active_checks/eventlog_win32/process_eventslog.c
@@ -103,6 +98,11 @@ compile process_eventslog6 zabbix_agent/active_checks/eventlog_win32/process_eve
 compile symbols libs/zbxwin32/symbols.c
 compile win32_file libs/zbxfile/win32/win32_file.c
 compile tls_version libs/zbxcomms/tls_version.c
+
+# 8.0のアップストリームは、オブジェクトを libagent.a にまとめて CGO_LDFLAGS で渡す(7.0までは
+# globals_windows.go の #cgo LDFLAGS が .o を1つずつ列挙していた)。同じようにまとめる。
+echo "AR libagent.a"
+x86_64-w64-mingw32-ar rcs "${OBJ_DIR}/libagent.a" "${OBJ_DIR}"/*.o
 
 # バージョン情報・アイコン等のWindowsリソース。resource.rc とそこからincludeされるファイルは
 # Windowsのパス区切り(\)でincludeを書いているので、Linuxで読めるよう / に直してから使う。
@@ -123,7 +123,7 @@ GOLDFLAGS="${GOLDFLAGS} -extldflags '-static -lcrypt32 -lgdi32 -luser32 -ladvapi
 echo "GO BUILD"
 cd "${SRC}/src/go"
 GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC="${CC}" \
-	CGO_CFLAGS="${CFLAGS}" CGO_LDFLAGS="-L${DEPS}/lib -L${SHIM_LIB}" \
+	CGO_CFLAGS="${CFLAGS}" CGO_LDFLAGS="-L${DEPS}/lib -L${SHIM_LIB} ${OBJ_DIR}/libagent.a" \
 	go build -tags "openssl pcre2" -ldflags="${GOLDFLAGS}" \
 	-o "${OUT_DIR}/zabbix_agent2.exe" golang.zabbix.com/agent2/cmd/zabbix_agent2
 
