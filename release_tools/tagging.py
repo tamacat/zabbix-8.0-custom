@@ -2,7 +2,7 @@
 
 公開名・タグ形式(BR4.1)は zabbix-5.0-custom と同じ規約に揃える:
 `tamacat/<リポジトリ名>:<zabbix-version>-alpine-b<YYYYMMDD>`
-(例: `tamacat/zabbix-server-mysql:7.0.32-alpine-b20260919`)。リポジトリ名は公式の
+(例: `tamacat/zabbix-server-mysql:8.0.0rc3-alpine-b20261031`)。リポジトリ名は公式の
 zabbix/zabbix-* イメージと同じ(models.IMAGE_REPOSITORIES)。コード変更を伴わない
 定期再ビルドでもビルド日付が異なる限りタグが衝突しないこと、および `latest` のような
 floatingタグを一切生成しないことを保証する。
@@ -13,10 +13,16 @@ import re
 from typing import Callable, Optional
 
 from .models import ARCHITECTURES, COMPONENT_NAMES, IMAGE_REPOSITORIES, REGISTRY_NAMESPACE
+from .zabbix_version import VERSION_REGEX, parse_supported
 
 _BUILD_DATE_PATTERN = re.compile(r"^\d{8}$")
-_ZABBIX_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
-_VERSION_SUFFIX_PATTERN = re.compile(r"^\d+\.\d+\.\d+-alpine-b\d{8}$")
+# 8.0.0rc3 のようなプレリリースも、そのままタグに入れる(8.0.0rc3-alpine-b20261031)。
+_VERSION_SUFFIX_PATTERN = re.compile(rf"^{VERSION_REGEX}-alpine-b\d{{8}}$")
+
+
+def _check_zabbix_version(zabbix_version: str) -> None:
+    """8.0系列のバージョン(プレリリースを含む)以外をValueErrorで拒否する。"""
+    parse_supported(zabbix_version)
 
 
 def image_repository(component: str) -> str:
@@ -39,8 +45,7 @@ def generate_tag(component: str, zabbix_version: str, build_date: str, arch: str
     repository = image_repository(component)
     if arch not in ARCHITECTURES:
         raise ValueError(f"BR5.2違反: 初回リリースはamd64のみ対応です: {arch!r}")
-    if not zabbix_version or not _ZABBIX_VERSION_PATTERN.match(zabbix_version):
-        raise ValueError(f"zabbix_version はX.Y.Z形式でなければなりません(例: 7.0.32): {zabbix_version!r}")
+    _check_zabbix_version(zabbix_version)
     if not build_date or not _BUILD_DATE_PATTERN.match(build_date):
         raise ValueError(f"build_date はYYYYMMDD形式の8桁でなければなりません: {build_date!r}")
 
@@ -60,8 +65,7 @@ def generate_release_tag(zabbix_version: str, build_date: str) -> str:
     規則で、コード変更を伴わない再ビルド(依存ライブラリの更新など)でも、ビルド日付が違えば
     衝突しない。`latest` のようなfloatingなタグは生成しない。
     """
-    if not zabbix_version or not _ZABBIX_VERSION_PATTERN.match(zabbix_version):
-        raise ValueError(f"zabbix_version はX.Y.Z形式でなければなりません(例: 7.0.32): {zabbix_version!r}")
+    _check_zabbix_version(zabbix_version)
     if not build_date or not _BUILD_DATE_PATTERN.match(build_date):
         raise ValueError(f"build_date はYYYYMMDD形式の8桁でなければなりません: {build_date!r}")
     return f"agent2-{zabbix_version}-b{build_date}"

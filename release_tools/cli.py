@@ -25,6 +25,7 @@ from .imagefile import ImageFileError, extract_image_file
 from .models import COMPONENT_NAMES
 from .registry import VulnerabilityRegistry, VulnerabilityRegistryError
 from .tagging import generate_release_tag, generate_tag, release_asset_prefix, require_self_review_confirmation
+from .zabbix_version import cdn_tarball_urls, parse_supported, upstream_update
 
 DEFAULT_REGISTRY_PATH = "data/vulnerability-registry.yaml"
 
@@ -232,6 +233,30 @@ def cmd_confirm_publish(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_zabbix_version(args: argparse.Namespace) -> int:
+    """Zabbixのバージョン文字列を検証する。--upstream-update では、標準入力(1行に1つの上流タグ名)から
+    現在より新しい追従先を探して出力する(無ければ何も出力しない。どちらもexit 0)。"""
+    try:
+        version = parse_supported(args.version)
+        if args.upstream_update:
+            newer = upstream_update(args.version, sys.stdin.read().split())
+            if newer is not None:
+                print(newer)
+        elif args.cdn_urls:
+            for url in cdn_tarball_urls(args.version):
+                print(url)
+        elif args.field == "line":
+            print(version.line)
+        elif args.field == "prerelease":
+            print("true" if version.is_prerelease else "false")
+        else:
+            print(version)
+    except ValueError as exc:
+        print(f"zabbix-version失敗: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 # --- argparse組み立て ---------------------------------------------------------
 
 
@@ -288,6 +313,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="タグの代わりに、添付するアーカイブ名の共通の接頭辞(zabbix_agent2-<version>-b<date>)を出力する",
     )
     p.set_defaults(func=cmd_generate_release_tag)
+
+    p = sub.add_parser(
+        "zabbix-version",
+        help="Zabbixのバージョン(8.0系列、alpha/beta/rcを含む)を検証し、上流の新しいバージョンを判定する",
+    )
+    p.add_argument("--version", required=True, help="例: 8.0.0rc3, 8.0.1")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--field", choices=("version", "line", "prerelease"), default="version")
+    mode.add_argument(
+        "--upstream-update",
+        action="store_true",
+        help="標準入力の上流タグ名一覧から、--versionより新しい追従先を出力する",
+    )
+    mode.add_argument("--cdn-urls", action="store_true", help="公式CDN上のソースtarballの候補URLを出力する")
+    p.set_defaults(func=cmd_zabbix_version)
 
     p = sub.add_parser("scan-gate", help="スキャン結果を正規化しBR2.1のゲート判定を行う")
     p.add_argument("--tool", required=True, choices=("trivy", "semgrep", "cppcheck", "govulncheck"))
