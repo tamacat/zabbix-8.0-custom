@@ -44,7 +44,7 @@ def test_api_version_matches_the_built_version(api):
     if not expected:
         pytest.skip("ZABBIX_VERSION is not set")
 
-    # APIは「8.0.0rc3」ではなく「8.0.0」を返す(rcの印は付かない)。
+    # プレリリース(例: 8.0.0rc3)でも、APIは「8.0.0」を返す(rcの印は付かない)。
     assert api.call("apiinfo.version", auth=False) == re.sub(r"rc\d+$", "", expected)
 
 

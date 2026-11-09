@@ -77,7 +77,7 @@ services:
   dev-mysql:
     volumes:
       - /mnt/c/git/docker/zabbix-8.0/zabbix-8.0-custom/docker/dev-mysql/init:/docker-entrypoint-initdb.d:ro
-      - /mnt/c/git/docker/zabbix-8.0/zabbix-8.0-custom/sources/zabbix-8.0.0rc3/database/mysql:/zabbix-schema-src:ro
+      - /mnt/c/git/docker/zabbix-8.0/zabbix-8.0-custom/sources/zabbix-8.0.0/database/mysql:/zabbix-schema-src:ro
 ```
 
 ```bash

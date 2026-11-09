@@ -14,6 +14,7 @@
 #   ZBX_GIT_URL  タグを引くgitリポジトリ(既定: https://git.zabbix.com/scm/zbx/zabbix.git)
 #   ENV_FILE     取り込み済みのバージョン(ZABBIX_VERSION=)を読むファイル(既定: .env.example)
 #
+# GitHub Actionsでは $GITHUB_STEP_SUMMARY があれば、結果の表も実行ページへ書き足す。
 # BR6.1: 失敗時は自動リトライを行わない。
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -25,6 +26,24 @@ fail() {
 	echo "!! ERROR: $1" >&2
 	echo "!! BR6.1: 自動リトライは行いません。原因を解消した上で本スクリプトを再実行してください。" >&2
 	exit 1
+}
+
+# 実行ページ用の表。書けなくても確認の結果は変えない。
+write_summary() {
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		{
+			echo "## Zabbix 上流バージョンの確認"
+			echo ""
+			echo "| 系列 | 取り込み済み | 上流の追従先 | 結果 |"
+			echo "|---|---|---|---|"
+			echo "| ${LINE} | ${CURRENT} | ${NEWER:-なし} | $1 |"
+			echo ""
+			if [ -n "${2:-}" ]; then
+				echo "$2"
+				echo ""
+			fi
+		} >> "${GITHUB_STEP_SUMMARY}" || true
+	fi
 }
 
 if python3 -c "import sys" >/dev/null 2>&1; then
@@ -54,9 +73,11 @@ echo "Zabbix ${LINE}系列: 取り込み済み=${CURRENT}  上流の追従先=${
 
 if [ -z "${NEWER}" ]; then
 	echo "Zabbix version check: up to date"
+	write_summary "✅ 最新です"
 	exit 0
 fi
 
+write_summary "❌ 更新があります" "取り込みは \`./scripts/import-upstream.sh ${NEWER}\` で行います。"
 echo "Zabbix version check: OUTDATED — ${NEWER} is available upstream. Import it with:" >&2
 echo "  ./scripts/import-upstream.sh ${NEWER}" >&2
 exit 1

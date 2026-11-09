@@ -1,6 +1,6 @@
 # zabbix-server(監視サーバー本体、C言語)— Alpine Linuxベースのカスタムイメージ [FR1.1][FR3.1]。
 #
-# ソースは ${ZABBIX_SRC_DIR}(既定 sources/zabbix-8.0.0rc3。scripts/import-upstream.sh が
+# ソースは ${ZABBIX_SRC_DIR}(既定 sources/zabbix-8.0.0。scripts/import-upstream.sh が
 # 取り込み、バージョンを上げるとこの既定値も書き換える)から取る。
 #
 # ビルドコンテキストはこのディレクトリ(zabbix-8.0-custom/)自身(compose.yml参照)。
@@ -14,7 +14,7 @@ ARG ALPINE_VERSION=3.24
 
 FROM alpine:${ALPINE_VERSION} AS builder
 
-ARG ZABBIX_SRC_DIR=sources/zabbix-8.0.0rc3
+ARG ZABBIX_SRC_DIR=sources/zabbix-8.0.0
 
 RUN apk add --no-cache \
 		build-base \

@@ -8,7 +8,7 @@
 # 呼び出すコード(関数レベル)だけを判定するため、Trivyの死角を補う2つ目のSCAとして使う。
 #
 # 使用法: scripts/scan-go-vuln.sh <イメージ参照> [<イメージ内のバイナリのパス>]
-#   例:   scripts/scan-go-vuln.sh tamacat/zabbix-agent2:8.0.0rc3-alpine-b20261008
+#   例:   scripts/scan-go-vuln.sh tamacat/zabbix-agent2:8.0.0-alpine-b20261008
 #         (パスの既定は usr/sbin/zabbix_agent2)
 #
 # BR6.1: 失敗時(ツール未インストール・イメージ未存在・ゲートFail)は自動リトライを行わない。
@@ -69,11 +69,18 @@ govulncheck -mode=binary -format json "${WORKDIR}/binary" > "${WORKDIR}/govulnch
 	|| fail "govulncheck の実行に失敗しました(${IMAGE_REF})。脆弱性DB(vuln.go.dev)へ到達できているか確認してください。"
 
 echo "---- ScanRunner ゲート判定(BR2.1, govulncheck) ----"
+# Job Summary用の記録(CIが SCAN_SUMMARY_FILE を渡したときだけ)。表示専用で、判定には影響しない。
+SUMMARY_ARGS=()
+if [ -n "${SCAN_SUMMARY_FILE:-}" ]; then
+	SUMMARY_ARGS=(--summary-file "${SCAN_SUMMARY_FILE}" --label "${IMAGE_REF}")
+fi
+
 VERDICT_STATUS=0
 "${PY}" -m release_tools.cli scan-gate \
 	--tool govulncheck \
 	--input "${WORKDIR}/govulncheck.json" \
 	--registry "${REGISTRY_PATH}" \
+	${SUMMARY_ARGS[@]+"${SUMMARY_ARGS[@]}"} \
 	|| VERDICT_STATUS=$?
 
 if [ "${VERDICT_STATUS}" -eq 0 ]; then

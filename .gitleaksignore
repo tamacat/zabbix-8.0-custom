@@ -1,7 +1,8 @@
 # gitleaks: findings triaged as false positives (one exact fingerprint per line).
 #
-# Every entry below is in the unmodified upstream Zabbix 8.0.0rc3 import (the commit named
-# in data/upstream-import-ref); none is in code this project wrote. A fingerprint is
+# Every entry below is in an unmodified upstream Zabbix import (the one named in
+# data/upstream-import-ref, or an earlier import that is still in the git history); none is in code
+# this project wrote. A fingerprint is
 # <commit>:<file>:<rule>:<line>, so it silences that one finding only: a real secret added
 # to the same file later, or to any other file, is still reported.
 #
@@ -24,3 +25,17 @@
 28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:53315
 28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:53318
 28e75363764a343669c67749863107284fa04ab7:sources/zabbix-8.0.0rc3/database/postgresql/data.sql:generic-api-key:72233
+
+# The same ten lines in the 8.0.0 import (same content at the same line numbers as in 8.0.0rc3,
+# checked against the two data.sql files). The entries above are for the 8.0.0rc3 import commit, which is
+# still in the history. (10)
+2a4ac04033bdac314f6bef23566353e4b73f6ede:sources/zabbix-8.0.0/database/mysql/data.sql:generic-api-key:7773
+2a4ac04033bdac314f6bef23566353e4b73f6ede:sources/zabbix-8.0.0/database/mysql/data.sql:generic-api-key:7774
+2a4ac04033bdac314f6bef23566353e4b73f6ede:sources/zabbix-8.0.0/database/mysql/data.sql:generic-api-key:7775
+2a4ac04033bdac314f6bef23566353e4b73f6ede:sources/zabbix-8.0.0/database/mysql/data.sql:generic-api-key:7776
+2a4ac04033bdac314f6bef23566353e4b73f6ede:sources/zabbix-8.0.0/database/mysql/data.sql:generic-api-key:8367
+2a4ac04033bdac314f6bef23566353e4b73f6ede:sources/zabbix-8.0.0/database/postgresql/data.sql:generic-api-key:53309
+2a4ac04033bdac314f6bef23566353e4b73f6ede:sources/zabbix-8.0.0/database/postgresql/data.sql:generic-api-key:53312
+2a4ac04033bdac314f6bef23566353e4b73f6ede:sources/zabbix-8.0.0/database/postgresql/data.sql:generic-api-key:53315
+2a4ac04033bdac314f6bef23566353e4b73f6ede:sources/zabbix-8.0.0/database/postgresql/data.sql:generic-api-key:53318
+2a4ac04033bdac314f6bef23566353e4b73f6ede:sources/zabbix-8.0.0/database/postgresql/data.sql:generic-api-key:72233

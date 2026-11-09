@@ -14,10 +14,11 @@ the one exception, since its own local buffer database may use SQLite3, same
 as the official image of that name — it never touches the main MySQL
 database. Zabbix itself stays on the 8.0 line.
 
-**8.0 is not released yet.** The vendored source is **8.0.0rc3**
-(`sources/zabbix-8.0.0rc3/`), a release candidate. The project follows the
-upstream pre-releases until 8.0.0 is out and then the 8.0.x point releases;
-see "Following upstream" below. Do not run a release candidate in production.
+**Zabbix 8.0 is released.** The vendored source is **8.0.0**
+(`sources/zabbix-8.0.0/`), the first official release; this project followed
+the 8.0.0 release candidates until it came out and now follows the 8.0.x point
+releases (never a pre-release once it is on a release); see "Following
+upstream" below.
 
 ## Following upstream (pre-releases, 8.0.0, 8.0.x)
 
@@ -99,19 +100,19 @@ scanned, published image. It implements six components:
 ## The Zabbix source
 
 The Dockerfiles and scripts reference `${ZABBIX_SRC_DIR}` (build arg / env
-var, default `sources/zabbix-8.0.0rc3`) as the location of the buildable
+var, default `sources/zabbix-8.0.0`) as the location of the buildable
 Zabbix 8.0 source tree, relative to this directory. It is vendored directly
 (committed, not a nested git submodule), the same layout as the 5.0/6.0/7.0
 projects, and is put there by `scripts/import-upstream.sh` (see "Following
 upstream"). Never place or replace it by hand: the import commit must hold the
 unmodified tree only.
 
-8.0.0rc3 has no official tarball (`cdn.zabbix.com` stops at 8.0.0beta2 for
-8.0), so it was built from the git tag `8.0.0rc3` (commit
-`090f06dc325f1629c5cdc2bb3354a184e15e55d4` on both `git.zabbix.com` and the
-GitHub mirror); the import commit's message records the source and the
-SHA-256 of the generated tarball. Override `ZABBIX_SRC_DIR` if you place the
-source somewhere else.
+8.0.0 is the official tarball from `cdn.zabbix.com` (`stable/8.0/`), checked
+against the `.sha256` published next to it; the import commit's message
+records the source and the SHA-256. (The release candidates had no official
+tarball and were built from their git tags; `scripts/import-upstream.sh` still
+does that for a pre-release that is only a tag.) Override `ZABBIX_SRC_DIR` if
+you place the source somewhere else.
 
 ## Running the tools
 
@@ -128,7 +129,7 @@ bats tests/scripts                # scripts/ tests (requires bats-core)
 python3 -m release_tools.cli register-cve --cve-id CVE-2026-00001 \
   --component zabbix-server --severity Critical
 python3 -m release_tools.cli generate-tag --component zabbix-server \
-  --zabbix-version 8.0.0rc3 --build-date "$(date -u +%Y%m%d)" --arch amd64
+  --zabbix-version 8.0.0 --build-date "$(date -u +%Y%m%d)" --arch amd64
 ```
 
 Once the Zabbix source is present:
@@ -313,11 +314,11 @@ three SQL files from the vendored source once, in this order:
 
 ```bash
 mysql -h "$DB_SERVER_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" \
-  < sources/zabbix-8.0.0rc3/database/mysql/schema.sql
+  < sources/zabbix-8.0.0/database/mysql/schema.sql
 mysql -h "$DB_SERVER_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" \
-  < sources/zabbix-8.0.0rc3/database/mysql/images.sql
+  < sources/zabbix-8.0.0/database/mysql/images.sql
 mysql -h "$DB_SERVER_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" \
-  < sources/zabbix-8.0.0rc3/database/mysql/data.sql
+  < sources/zabbix-8.0.0/database/mysql/data.sql
 ```
 
 **The database must exist with `utf8mb4` character set and `utf8mb4_bin`
@@ -408,6 +409,23 @@ optional. The release gate always checks against the current CVE database
 at gate-evaluation time rather than relying on scan results from whenever
 the image was originally built.
 
+### Reading a CI run: what changed, and how far the checks got
+
+Every run of `ci-release.yml` writes a **Job Summary** on its run page (Actions, then the run, then *Summary*), so
+the logs do not have to be opened:
+
+- **What changed since the previous build.** This run's SBOMs are compared with the previous run's on `main`:
+  package updates, additions and removals per image, and the Alpine point release.
+- **How far the vulnerability checks got.** Trivy counts per image and severity, how many findings a waiver
+  covers (and which CVEs), govulncheck on agent2, SAST findings above the baseline, the secret scan, the
+  compatibility test and the publish gate. The Trivy vulnerability DB timestamp shows how fresh the data was.
+- **Upstream.** The weekly `zabbix-version` job fails when upstream has a newer 8.0.x release than the one
+  imported (`ZABBIX_VERSION` in `.env.example`, checked by `scripts/check-zabbix-version.sh`), and `php-version` does the same for PHP; each also adds a one-row table to the Summary. They
+  only notify: they do not block `verify` or `publish`.
+
+A scheduled run stays *waiting* until the `production` environment is approved. By then `verify` (every check
+above) has already finished; nothing is published until you approve.
+
 ### PHP in `zabbix-web` is built from source
 
 The `zabbix-web` image does not use Alpine's `php85` packages: PHP is compiled
@@ -444,7 +462,7 @@ the corresponding source is this repository (the Zabbix source under `sources/` 
 the patches applied, plus the build files). Keep it publicly available alongside
 the published images.
 
-## 8.0 build notes (8.0.0rc3)
+## 8.0 build notes (8.0.0)
 
 What changed from the 7.0 build, and why:
 
@@ -458,8 +476,8 @@ What changed from the 7.0 build, and why:
 - **MySQL 8.4**: 8.0 supports MySQL 8.4 to 9.7 (8.0.42+ only with `ZBX_ALLOWUNSUPPORTEDDBVERSIONS=1`).
   `dev-mysql` and the CI service use `mysql:8.4`.
 - **Go**: agent2 is built with Go 1.27.3; `golang.org/x/net` v0.62.0 and `x/text` v0.43.0 replace the
-  versions 8.0.0rc3 vendors (Trivy findings, same fix as 7.0).
-- **symfony/yaml** 5.4.54 with Zabbix's own patch re-applied (same as 6.0/7.0; 8.0.0rc3 still vendors 5.1.3).
+  versions 8.0.0 vendors (v0.57.0 and v0.40.0; Trivy findings, same fix as 7.0).
+- **symfony/yaml** 5.4.54 with Zabbix's own patch re-applied (same as 6.0/7.0; 8.0.0 still vendors 5.1.3).
 - **Windows agent2**: 8.0's `build/mingw/Makefile` links the C objects through `libagent.a` and no longer
   builds five `sysinfo` common objects; `docker/agent2-binaries/build-windows.sh` follows it.
 - **New environment variables** (official 8.0 names): server `ZBX_HISTORYPROVIDER_<N>` /

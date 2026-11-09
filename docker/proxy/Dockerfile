@@ -1,7 +1,7 @@
 # zabbix-proxy(プロキシ、C言語)— Alpine Linuxベースのカスタムイメージ [FR1.4][FR3.1]。
 #
 # ソースの置き場所は docker/server/Dockerfile 冒頭のコメントと同じ(${ZABBIX_SRC_DIR}、既定
-# sources/zabbix-8.0.0rc3)。
+# sources/zabbix-8.0.0)。
 #
 # docker/server/Dockerfile と同じ構造で、意図的な差分は次の2つ:
 # - --with-mysql の代わりに --with-sqlite3(BR5.1: zabbix-proxyのローカルバッファに限り
@@ -14,7 +14,7 @@ ARG ALPINE_VERSION=3.24
 
 FROM alpine:${ALPINE_VERSION} AS builder
 
-ARG ZABBIX_SRC_DIR=sources/zabbix-8.0.0rc3
+ARG ZABBIX_SRC_DIR=sources/zabbix-8.0.0
 
 RUN apk add --no-cache \
 		build-base \

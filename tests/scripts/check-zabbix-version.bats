@@ -87,6 +87,23 @@ run_check() {
 	[ "$status" -ne 0 ]
 }
 
+@test "GITHUB_STEP_SUMMARY があれば、結果の表を書き足す(取り込みのコマンドは実行しない)" {
+	SUMMARY_FILE="${TEST_TMPDIR}/summary.md"
+	printf '8.0.0rc3\n8.0.0\n' > "${TAGS_FILE}"
+	run_check GITHUB_STEP_SUMMARY="${SUMMARY_FILE}"
+	[ "$status" -ne 0 ]
+	grep -q "| 8.0 | 8.0.0rc3 | 8.0.0 |" "${SUMMARY_FILE}"
+	grep -q "更新があります" "${SUMMARY_FILE}"
+	# コマンドは文字として載るだけで、スクリプトが実行してはならない(バッククォートの置換漏れの回帰)。
+	grep -q 'import-upstream.sh 8.0.0' "${SUMMARY_FILE}"
+	[[ "$output" != *"import-upstream:"* ]]
+
+	printf '8.0.0rc3\n' > "${TAGS_FILE}"
+	run_check GITHUB_STEP_SUMMARY="${SUMMARY_FILE}"
+	[ "$status" -eq 0 ]
+	grep -q "最新です" "${SUMMARY_FILE}"
+}
+
 @test "実際の .env.example から取り込み済みのバージョンを読める" {
 	printf '8.0.0rc3\n' > "${TAGS_FILE}"
 	cd "${REPO_ROOT}"

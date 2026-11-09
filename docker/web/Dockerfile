@@ -3,7 +3,7 @@
 # 維持する。
 #
 # ソース(ui/ ディレクトリ)の置き場所は docker/server/Dockerfile 冒頭のコメントと同じ
-# (${ZABBIX_SRC_DIR}、既定 sources/zabbix-8.0.0rc3)。
+# (${ZABBIX_SRC_DIR}、既定 sources/zabbix-8.0.0)。
 #
 # ビルドコンテキストはこのディレクトリ(zabbix-8.0-custom/)自身(compose.yml参照)。
 # UIは既存アップストリームソースへのパッチ対象であり(トラックA)、本Dockerfileは
@@ -89,7 +89,7 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.title="Zabbix web interface (nginx, MySQL)" \
       org.opencontainers.image.source="https://github.com/tamacat/zabbix-8.0-custom"
 
-ARG ZABBIX_SRC_DIR=sources/zabbix-8.0.0rc3
+ARG ZABBIX_SRC_DIR=sources/zabbix-8.0.0
 ARG PHP_PKG=php85
 
 # ベースイメージ(alpine:${ALPINE_VERSION})は取得した時点のスナップショットで、その後にAlpineが

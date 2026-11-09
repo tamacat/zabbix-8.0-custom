@@ -2,7 +2,7 @@
 
 公開名・タグ形式(BR4.1)は zabbix-5.0-custom と同じ規約に揃える:
 `tamacat/<リポジトリ名>:<zabbix-version>-alpine-b<YYYYMMDD>`
-(例: `tamacat/zabbix-server-mysql:8.0.0rc3-alpine-b20261031`)。リポジトリ名は公式の
+(例: `tamacat/zabbix-server-mysql:8.0.0-alpine-b20261031`)。リポジトリ名は公式の
 zabbix/zabbix-* イメージと同じ(models.IMAGE_REPOSITORIES)。コード変更を伴わない
 定期再ビルドでもビルド日付が異なる限りタグが衝突しないこと、および `latest` のような
 floatingタグを一切生成しないことを保証する。

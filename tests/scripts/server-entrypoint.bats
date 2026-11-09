@@ -326,12 +326,12 @@ AllowRoot=1"
 	[ ! -f "${TEST_TMPDIR}/started.log" ]
 }
 
-@test "このスクリプトが出力するパラメータは、すべて8.0.0rc3のzabbix_serverが受け付ける名前である" {
-	local server_c="${REPO_ROOT}/sources/zabbix-8.0.0rc3/src/zabbix_server/server.c"
+@test "このスクリプトが出力するパラメータは、すべて8.0.0のzabbix_serverが受け付ける名前である" {
+	local server_c="${REPO_ROOT}/sources/zabbix-8.0.0/src/zabbix_server/server.c"
 	[ -f "${server_c}" ]
 	local accepted emitted unknown
 	# server.c writes an entry as `{"Name", &variable, ...}`, but a long entry breaks the line after the name
-	# (ProblemHousekeepingFrequency in 8.0.0rc3), so join the lines before matching.
+	# (ProblemHousekeepingFrequency in 8.0.0), so join the lines before matching.
 	accepted="$(tr '\n' ' ' < "${server_c}" | grep -oE '\{"[A-Za-z0-9]+",[[:space:]]*&' | grep -oE '"[A-Za-z0-9]+"' | tr -d '"' | sort -u)"
 	[ -n "${accepted}" ]
 	emitted="$( { sed -n '/^SCALARS="/,/^"$/p' "${REPO_ROOT}/docker/server/entrypoint.sh" | grep -oE ':[A-Za-z0-9]+$' | tr -d ':'; \
@@ -340,7 +340,7 @@ AllowRoot=1"
 	              sed -n '/^VAULT_SCALARS="/,/^"$/p' "${REPO_ROOT}/docker/server/entrypoint.sh" | grep -oE ':[A-Za-z0-9]+$' | tr -d ':'; \
 	              printf '%s\n' DBHost DBPort DBName DBUser DBPassword LogType PidFile SocketDir AlertScriptsPath ExternalScripts ExportDir LoadModule LoadModulePath HANodeName NodeAddress HistoryProvider TelemetryProvider; } | sort -u)"
 	unknown="$(comm -23 <(printf '%s\n' "${emitted}") <(printf '%s\n' "${accepted}"))"
-	[ -z "${unknown}" ] || { echo "8.0.0rc3が受け付けないパラメータ: ${unknown}" >&2; return 1; }
+	[ -z "${unknown}" ] || { echo "8.0.0が受け付けないパラメータ: ${unknown}" >&2; return 1; }
 	[ "$(printf '%s\n' "${emitted}" | wc -l)" -gt 60 ]
 }
 

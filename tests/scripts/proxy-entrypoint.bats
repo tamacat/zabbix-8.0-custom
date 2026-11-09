@@ -214,7 +214,7 @@ conf_lacks() { ! grep -qE -- "$1" "${CONF}"; }
 }
 
 @test "7.0のzabbix_proxyが受け付けないStartHistoryPollersは、設定ファイルに出さず、無視する警告を出す" {
-	# 6.0のプロキシにはあったが、8.0.0rc3のproxy.cには無い。出すとzabbix_proxyが不明なパラメータで起動に失敗する。
+	# 6.0のプロキシにはあったが、8.0.0のproxy.cには無い。出すとzabbix_proxyが不明なパラメータで起動に失敗する。
 	run_entrypoint ZBX_STARTHISTORYPOLLERS=2
 	[ "$status" -eq 0 ]
 	! conf_has "StartHistoryPollers=2"
@@ -248,13 +248,13 @@ EnableRemoteCommands=1"
 	[ ! -f "${TEST_TMPDIR}/started.log" ]
 }
 
-# 設定した項目を、実際の8.0.0rc3のzabbix_proxyが受け付けるか(未知のパラメータがあると起動できない)。
-@test "このスクリプトが出力するパラメータは、すべて8.0.0rc3のzabbix_proxyが受け付ける名前である" {
-	local proxy_c="${REPO_ROOT}/sources/zabbix-8.0.0rc3/src/zabbix_proxy/proxy.c"
+# 設定した項目を、実際の8.0.0のzabbix_proxyが受け付けるか(未知のパラメータがあると起動できない)。
+@test "このスクリプトが出力するパラメータは、すべて8.0.0のzabbix_proxyが受け付ける名前である" {
+	local proxy_c="${REPO_ROOT}/sources/zabbix-8.0.0/src/zabbix_proxy/proxy.c"
 	[ -f "${proxy_c}" ]
 	local accepted emitted
 	# proxy.c writes an entry as `{"Name", &variable, ...}`, but a long entry breaks the line after the name
-	# (MaxConcurrentChecksPerPoller in 8.0.0rc3), so join the lines before matching.
+	# (MaxConcurrentChecksPerPoller in 8.0.0), so join the lines before matching.
 	accepted="$(tr '\n' ' ' < "${proxy_c}" | grep -oE '\{"[A-Za-z0-9]+",[[:space:]]*&' | grep -oE '"[A-Za-z0-9]+"' | tr -d '"' | sort -u)"
 	[ -n "${accepted}" ]
 	# SCALARSの<変数>:<パラメータ>の右側と、TLS_FILESの左端
@@ -264,7 +264,7 @@ EnableRemoteCommands=1"
 	              printf '%s\n' ProxyMode Server Hostname HostnameItem DBName LoadModule LoadModulePath LogType PidFile SocketDir ExternalScripts TelemetryProvider; } | sort -u)"
 	local unknown
 	unknown="$(comm -23 <(printf '%s\n' "${emitted}") <(printf '%s\n' "${accepted}"))"
-	[ -z "${unknown}" ] || { echo "8.0.0rc3が受け付けないパラメータ: ${unknown}" >&2; return 1; }
+	[ -z "${unknown}" ] || { echo "8.0.0が受け付けないパラメータ: ${unknown}" >&2; return 1; }
 	# 表が空だったり読めていなかったりして「何もチェックしていない」状態を防ぐ。
 	[ "$(printf '%s\n' "${emitted}" | wc -l)" -gt 40 ]
 }

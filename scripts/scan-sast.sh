@@ -4,7 +4,7 @@
 # 突合してBR2.1のゲート判定にかける [FR5.2]。
 #
 # 使用法: scripts/scan-sast.sh [--scope patched|full] [--update-baseline] [<ソースディレクトリ>]
-#   省略時のソースディレクトリは ZABBIX_SRC_DIR(既定: sources/zabbix-8.0.0rc3)。
+#   省略時のソースディレクトリは ZABBIX_SRC_DIR(既定: sources/zabbix-8.0.0)。
 #
 #   --scope patched(既定) 上流の初回インポート(data/upstream-import-ref)から変更された
 #                         ファイル(サードパーティのvendor配下を除く)だけを解析する。
@@ -68,7 +68,7 @@ while [ "$#" -gt 0 ]; do
 	esac
 done
 
-SOURCE_DIR="${SOURCE_DIR_ARG:-${ZABBIX_SRC_DIR:-sources/zabbix-8.0.0rc3}}"
+SOURCE_DIR="${SOURCE_DIR_ARG:-${ZABBIX_SRC_DIR:-sources/zabbix-8.0.0}}"
 
 case "${SAST_SCOPE}" in
 	patched | full) ;;
@@ -109,6 +109,12 @@ if [ "${UPDATE_BASELINE}" -eq 0 ]; then
 	for baseline in "${SEMGREP_BASELINE}" "${CPPCHECK_BASELINE}"; do
 		[ -f "${baseline}" ] || fail "baseline '${baseline}' が見つかりません。上流の既存の指摘を確認した上で scripts/scan-sast.sh --update-baseline で作成してください。"
 	done
+fi
+
+# Job Summary用の記録(CIが SCAN_SUMMARY_FILE を渡したときだけ)。表示専用で、判定には影響しない。
+SUMMARY_ARGS=()
+if [ -n "${SCAN_SUMMARY_FILE:-}" ]; then
+	SUMMARY_ARGS=(--summary-file "${SCAN_SUMMARY_FILE}" --label "範囲: ${SAST_SCOPE}")
 fi
 
 SEMGREP_OUTPUT="$(mktemp)"
@@ -193,6 +199,7 @@ else
 		--source-root "${SOURCE_DIR}" \
 		${STALE_ARGS[@]+"${STALE_ARGS[@]}"} \
 		--registry "${REGISTRY_PATH}" \
+		${SUMMARY_ARGS[@]+"${SUMMARY_ARGS[@]}"} \
 		|| SEMGREP_STATUS=$?
 	if [ "${SEMGREP_STATUS}" -eq 0 ]; then
 		echo "Semgrep verdict: Pass"
@@ -248,6 +255,7 @@ CPPCHECK_STATUS=0
 	--source-root "${SOURCE_DIR}" \
 	${STALE_ARGS[@]+"${STALE_ARGS[@]}"} \
 	--registry "${REGISTRY_PATH}" \
+	${SUMMARY_ARGS[@]+"${SUMMARY_ARGS[@]}"} \
 	|| CPPCHECK_STATUS=$?
 if [ "${CPPCHECK_STATUS}" -eq 0 ]; then
 	echo "cppcheck verdict: Pass"
