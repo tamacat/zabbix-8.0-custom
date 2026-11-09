@@ -4,13 +4,12 @@
 name: CI / Release
 
 # Actionsの一覧で、定期実行と手動実行が見分けられるようにする(どれも既定では「CI / Release」になる)。
-# push・pull_requestは、既定の表示(コミットメッセージ・PRのタイトル)と同じにする。
+# push・pull_requestは空にして、GitHubの既定の表示(コミットメッセージの1行目・PRのタイトル)に任せる。
+# (head_commit.message をそのまま使うと、複数行のコミットメッセージが一覧に全文出てしまう。)
 run-name: >-
   ${{ github.event_name == 'schedule' && '定期の再ビルド・再スキャン(週次)'
   || github.event_name == 'workflow_dispatch' && '手動の再ビルド・再スキャン'
-  || github.event.head_commit.message
-  || github.event.pull_request.title
-  || github.workflow }}
+  || '' }}
 
 on:
   push:
