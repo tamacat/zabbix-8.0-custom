@@ -54,8 +54,8 @@ official images, so a new upstream version can be built the day it is tagged.
   then run the tests, regenerate the SAST baseline, build and scan (the script
   prints the commands), and commit.
 - **Image tags** carry the exact upstream version, pre-release included:
-  `tamacat/zabbix-server-mysql:8.0.0rc3-alpine-b20261031`. There are still no
-  floating tags.
+  `tamacat/zabbix-server-mysql:8.0.0rc3-alpine-b20261031`. A pre-release never moves the
+  `8.0-latest` alias.
 - **Read the release notes** of each new version: new configuration parameters
   need a line in `docker/*/entrypoint.sh` (the tests check that every
   parameter written is one the new `zabbix_server`/`zabbix_proxy` accepts),
@@ -89,8 +89,9 @@ scanned, published image. It implements six components:
   --no-stream` as a reference observation (not itself a release gate).
 - **ImagePublisher** (`release_tools/tagging.py`, `scripts/push-images.sh`) —
   generates the `tamacat/<repository>:<version>-alpine-b<YYYYMMDD>`
-  tag (never a floating tag such as `latest`; same repositories and tag format as
-  `zabbix-5.0-custom`), enforces the 4-condition
+  tag (immutable; the only floating tag is the series alias `<X.Y>-latest`, moved
+  after signing; same repositories and tag format as `zabbix-5.0-custom`),
+  enforces the 4-condition
   publish gate (SCA pass, SAST pass, compatibility pass, secrets clean) plus
   an explicit self-review confirmation before `docker push`, then attempts
   cosign keyless signing and SBOM attestation against the published registry
@@ -167,11 +168,22 @@ tag sits next to the 5.0/6.0/7.0 ones in each repository:
 | zabbix-agent2 | [tamacat/zabbix-agent2](https://hub.docker.com/r/tamacat/zabbix-agent2) |
 | zabbix-proxy (SQLite3) | [tamacat/zabbix-proxy-sqlite3](https://hub.docker.com/r/tamacat/zabbix-proxy-sqlite3) |
 
-Tag format: `<zabbix-version>-alpine-b<build-date>`, the same for all four images
-(there are no floating tags such as `latest`), e.g.:
+Tag format: `<zabbix-version>-alpine-b<build-date>`, the same for all four images.
+A dated tag never changes once published, so pin it (or its digest) when you need a
+reproducible deployment, e.g.:
 
 ```bash
 docker pull tamacat/zabbix-server-mysql:8.0.0rc3-alpine-b20260925
+```
+
+`<X.Y>-latest` (for example `8.0-latest`) is a floating tag: in each of the four
+repositories it points at the newest published build of that series. The publish
+job moves it only after the image is signed and its SBOM is attached, and it points
+at the very same image (the same digest) as the dated tag, so the signature and SBOM
+apply to it unchanged. A pre-release (for example `8.0.0rc3`) never moves it.
+
+```bash
+docker pull tamacat/zabbix-server-mysql:8.0-latest
 ```
 
 Images are signed with cosign (keyless) and carry a CycloneDX SBOM attestation;
